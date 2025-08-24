@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.36310.24 d17.14
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FastApi NetCore", "FastApi NetCore.csproj", "{4ADA1C89-B04F-4BFF-8F49-F2C32779A46D}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{4ADA1C89-B04F-4BFF-8F49-F2C32779A46D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4ADA1C89-B04F-4BFF-8F49-F2C32779A46D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4ADA1C89-B04F-4BFF-8F49-F2C32779A46D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4ADA1C89-B04F-4BFF-8F49-F2C32779A46D}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {D18FE0CB-0AFE-43CB-87E9-154C9E5FAF4F}
+	EndGlobalSection
+EndGlobal
