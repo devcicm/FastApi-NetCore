@@ -20,7 +20,7 @@ namespace FastApi_NetCore.Services
 {
     internal class HttpService
     {
-        public sealed class HttpTunnelServiceTest : IHostedService, IDisposable
+        public sealed class HttpTunnelService : IHostedService, IDisposable
         {
             private readonly IHttpRouter _router;
             private readonly HttpListener _listener = new();
@@ -32,15 +32,15 @@ namespace FastApi_NetCore.Services
             private CancellationTokenSource? _acceptLoopCts;
             private Task? _acceptLoop;
 
-            public HttpTunnelServiceTest(
-                IHttpRouter router,
-                IOptions<ServerConfig> serverConfig,
-                IOptions<RateLimitConfig> rateLimitConfig,
-                IOptions<ApiKeyConfig> apiKeyConfig,
-                IServiceProvider serviceProvider,
-                ILoggerService logger,
-                IApiKeyService apiKeyService,
-                IRateLimitService rateLimitService)
+            public HttpTunnelService(
+       IHttpRouter router,
+       IOptions<ServerConfig> serverConfig,
+       IOptions<RateLimitConfig> rateLimitConfig,
+       IOptions<ApiKeyConfig> apiKeyConfig,
+       IServiceProvider serviceProvider,
+       ILoggerService logger,
+       IApiKeyService apiKeyService,
+       IRateLimitService rateLimitService)
             {
                 _router = router;
                 _serverConfig = serverConfig;

@@ -14,8 +14,12 @@
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="9.0.8" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.14.0" />
   </ItemGroup>
+	<ItemGroup>
+		<Content Include="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+		<Content Include="appsettings.Development.json" CopyToOutputDirectory="PreserveNewest" />
+	</ItemGroup>
 
-  <ItemGroup>
+	<ItemGroup>
     <Folder Include="Models\" />
   </ItemGroup>
 

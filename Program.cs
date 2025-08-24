@@ -19,7 +19,21 @@ public class Program
 {
     public static async Task Main(string[] args)
     {
+        // Determinar el entorno actual
+        var environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production";
+
+        var contentRoot = AppContext.BaseDirectory; // siempre existe
+        Directory.SetCurrentDirectory(contentRoot); // asegura relative paths
+
         var host = Host.CreateDefaultBuilder(args)
+            .UseContentRoot(contentRoot)
+            .ConfigureAppConfiguration((ctx, config) =>
+            {
+                config.SetBasePath(contentRoot)
+                      .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+                      .AddJsonFile($"appsettings.{ctx.HostingEnvironment.EnvironmentName}.json", optional: true, reloadOnChange: true)
+                      .AddEnvironmentVariables();
+            })
             .ConfigureServices((ctx, services) =>
             {
                 // Configuración
@@ -68,7 +82,7 @@ public class Program
                 services.AddRouteHandlers();
 
                 // Servicio principal
-                services.AddHostedService<HttpService.HttpTunnelServiceTest>();
+                services.AddHostedService<HttpService.HttpTunnelService>();
             })
             .UseWindowsService()
             .Build();

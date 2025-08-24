@@ -12,9 +12,12 @@ namespace FastApi_NetCore.EndPoints
 {
     // ==================== HANDLERS DE PRUEBA ====================
     // Clase donde puedes usar tus metodos como llamadas de api
+
     public class MySampleHttpHandlers
     {
+         
         [RouteConfiguration("/ping", HttpMethodType.GET)]
+        [IpRange("192.168.1.0", "122.0.1.1-122.0.1.100")]
         public async Task Ping(HttpListenerContext context)
         {
             var buffer = Encoding.UTF8.GetBytes("pong");
