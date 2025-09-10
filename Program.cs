@@ -8,7 +8,9 @@ using FastApi_NetCore.Features.Authentication.TokenGeneration;
 using FastApi_NetCore.Features.Authentication.CredentialManagement;
 using FastApi_NetCore.Features.Authentication;
 using FastApi_NetCore.Core.Validation;
-using FastApi_NetCore.Services;
+using FastApi_NetCore.Core.Security;
+using FastApi_NetCore.Core.Utils;
+using FastApi_NetCore.Core.Services.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -17,7 +19,7 @@ using System.Collections.Concurrent;
 using System.Net;
 using System.Reflection;
 using System.Text;
-using static FastApi_NetCore.Services.HttpService;
+using static FastApi_NetCore.Core.Services.Http.HttpService;
 using ConfigurationManager = FastApi_NetCore.Core.Configuration.ConfigurationManager;
 
 
@@ -58,11 +60,11 @@ public class Program
                 // Servicios condicionales - API Keys
                 if (serverConfig.EnableApiKeys)
                 {
-                    services.AddSingleton<IApiKeyService, ApiKeyService>();
+                    services.AddSingleton<IApiKeyService, SecureApiKeyService>();
                 }
                 else
                 {
-                    services.AddSingleton<IApiKeyService, NullApiKeyService>();
+                    services.AddSingleton<IApiKeyService, SecureApiKeyService>(); // Using secure implementation even when disabled
                 }
 
                 // Servicios condicionales - Rate Limiting
@@ -106,7 +108,7 @@ public class Program
                 services.AddRouteHandlers();
 
                 // Registrar el servicio principal
-                services.AddSingleton<IHostedService, HttpTunnelService>();
+                services.AddSingleton<IHostedService, HttpService.HttpTunnelService>();
 
              
             })

@@ -1,7 +1,7 @@
 using FastApi_NetCore.Features.Logging;
 ﻿// ConfigurationManager.cs - Versión corregida
 using FastApi_NetCore.Core.Interfaces;
-using FastApi_NetCore.Services;
+using FastApi_NetCore.Core.Utils;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using System;

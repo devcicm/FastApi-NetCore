@@ -6,7 +6,7 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Xml.Serialization;
 
-namespace FastApi_NetCore.Services
+namespace FastApi_NetCore.Core.Utils
 {
     public interface IResponseSerializer
     {

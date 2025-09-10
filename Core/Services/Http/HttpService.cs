@@ -19,7 +19,7 @@ using System.Threading.Tasks;
  
 
 
-namespace FastApi_NetCore.Services
+namespace FastApi_NetCore.Core.Services.Http
 {
     internal class HttpService
     {
