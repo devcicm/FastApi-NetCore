@@ -1,5 +1,5 @@
-﻿using FastApi_NetCore.Configuration;
-using FastApi_NetCore.Interfaces;
+﻿using FastApi_NetCore.Core.Configuration;
+using FastApi_NetCore.Core.Interfaces;
  
 using Microsoft.Extensions.Options;
 using System;
@@ -29,11 +29,14 @@ namespace FastApi_NetCore.Services
             {
                 return new ApiKeyInfo
                 {
-                    Key = apiKey,
-                    Owner = keyInfo.Owner,
+                    Id = apiKey,
+                    Name = keyInfo.Owner,
+                    UserId = keyInfo.Owner,
                     Roles = keyInfo.Roles,
-                    Permissions = keyInfo.Permissions,
-                    ExpirationDate = keyInfo.ExpirationDate
+                    CreatedAt = DateTime.UtcNow.AddDays(-30), // Default for existing keys
+                    ExpiresAt = keyInfo.ExpirationDate == default ? null : keyInfo.ExpirationDate,
+                    IsActive = keyInfo.IsActive,
+                    PartialKey = apiKey.Length > 8 ? apiKey[..6] + "***" + apiKey[^4..] : apiKey
                 };
             }
 

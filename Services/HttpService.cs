@@ -1,6 +1,8 @@
-﻿using FastApi_NetCore.Configuration;
-using FastApi_NetCore.Interfaces;
-using FastApi_NetCore.Middleware;
+﻿using FastApi_NetCore.Core.Configuration;
+using FastApi_NetCore.Core.Interfaces;
+using FastApi_NetCore.Features.Authentication;
+using FastApi_NetCore.Features.Middleware;
+using FastApi_NetCore.Core.Utils;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
@@ -33,14 +35,14 @@ namespace FastApi_NetCore.Services
             private Task? _acceptLoop;
 
             public HttpTunnelService(
-       IHttpRouter router,
-       IOptions<ServerConfig> serverConfig,
-       IOptions<RateLimitConfig> rateLimitConfig,
-       IOptions<ApiKeyConfig> apiKeyConfig,
-       IServiceProvider serviceProvider,
-       ILoggerService logger,
-       IApiKeyService apiKeyService,
-       IRateLimitService rateLimitService)
+                    IHttpRouter router,
+                    IOptions<ServerConfig> serverConfig,  // Cambiado a IOptions<ServerConfig>
+                    IOptions<RateLimitConfig> rateLimitConfig,
+                    IOptions<ApiKeyConfig> apiKeyConfig,
+                    IServiceProvider serviceProvider,
+                    ILoggerService logger,
+                    IApiKeyService apiKeyService,
+                    IRateLimitService rateLimitService)
             {
                 _router = router;
                 _serverConfig = serverConfig;
@@ -48,18 +50,57 @@ namespace FastApi_NetCore.Services
                 _apiKeyService = apiKeyService;
                 _rateLimitService = rateLimitService;
 
-                _listener.Prefixes.Add(serverConfig.Value.HttpPrefix);
+                var config = serverConfig.Value;
+                _listener.Prefixes.Add(config.HttpPrefix);
+                
+                // Configurar HttpListener para alta concurrencia
+                _listener.IgnoreWriteExceptions = true;
+                
+                // En Windows, configurar el número de conexiones simultáneas
+                if (Environment.OSVersion.Platform == PlatformID.Win32NT)
+                {
+                    try 
+                    {
+                        // Usar reflexión para establecer ConnectionLimit si está disponible
+                        var connectionLimitProperty = typeof(HttpListener).GetProperty("DefaultConnectionLimit");
+                        connectionLimitProperty?.SetValue(_listener, config.MaxConcurrentConnections);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogInformation($"[HTTP] Could not set connection limit: {ex.Message}");
+                    }
+                }
 
                 _middlewarePipeline = new MiddlewarePipeline();
 
-                // Configurar middlewares en orden de ejecución
+                // Configurar middlewares en orden optimizado para alta concurrencia
+                // Primero: Request Tracing para rastrear todas las solicitudes
+                if (config.EnableRequestTracing)
+                {
+                    _middlewarePipeline.Use(new RequestTracingMiddleware(serverConfig, logger));
+                }
+                
+                _middlewarePipeline.Use(new ConcurrencyThrottleMiddleware(serverConfig, logger));
+                
+                // CORS Validation - debe estar temprano en el pipeline
+                _middlewarePipeline.Use(serviceProvider.GetService<CorsValidationMiddleware>());
+                
+                if (config.EnableCaching)
+                {
+                    _middlewarePipeline.Use(new ResponseCacheMiddleware(serverConfig, logger));
+                }
+                
+                if (config.EnableCompression)
+                {
+                    _middlewarePipeline.Use(new CompressionMiddleware(serverConfig, logger));
+                }
+
                 _middlewarePipeline.Use(new LoggingMiddleware(logger));
 
                 _middlewarePipeline.Use(new IpFilterMiddleware(
-                    serverConfig.Value.IpBlacklist,
-                    serverConfig.Value.IpWhitelist,
-                    serverConfig.Value.IpPool,
-                    serverConfig.Value.IsProduction));
+       serverConfig.Value.IpBlacklist,
+       serverConfig.Value.IpWhitelist,
+       serverConfig.Value.IsProduction));
 
                 // Solo agregar middleware de API Keys si está habilitado
                 if (serverConfig.Value.EnableApiKeys)
@@ -69,8 +110,6 @@ namespace FastApi_NetCore.Services
                         apiKeyConfig,
                         _serverConfig));
                 }
-
-                _middlewarePipeline.Use(new JwtAuthMiddleware(_serverConfig));
 
                 // Solo agregar middleware de Rate Limiting si está habilitado
                 if (serverConfig.Value.EnableRateLimiting)
@@ -82,10 +121,6 @@ namespace FastApi_NetCore.Services
                 }
 
                 _middlewarePipeline.Use(new ServiceProviderMiddleware(serviceProvider));
-
-                _middlewarePipeline.Use(new AuthorizationMiddleware(
-                    serverConfig.Value.IsProduction,
-                    serverConfig.Value.IpPool));
             }
 
             public Task StartAsync(CancellationToken token)
@@ -96,28 +131,81 @@ namespace FastApi_NetCore.Services
 
                 _acceptLoop = Task.Run(async () =>
                 {
-                    _logger.LogInformation($"HTTP server started on {_serverConfig.Value.HttpPrefix}");
+                    var config = _serverConfig.Value;
+                    _logger.LogInformation($"[HTTP] Server started successfully:\n" +
+                        $"        Endpoint: {config.HttpPrefix}\n" +
+                        $"        Max Connections: {config.MaxConcurrentConnections}\n" +
+                        $"        Request Tracing: {(config.EnableRequestTracing ? "Enabled" : "Disabled")}\n" +
+                        $"        Compression: {(config.EnableCompression ? "Enabled" : "Disabled")}\n" +
+                        $"        Caching: {(config.EnableCaching ? "Enabled" : "Disabled")}\n" +
+                        $"        Rate Limiting: {(config.EnableRateLimiting ? "Enabled" : "Disabled")}\n" +
+                        $"        API Keys: {(config.EnableApiKeys ? "Enabled" : "Disabled")}\n" +
+                        $"        Environment: {(config.IsProduction ? "Production" : "Development")}\n" +
+                        $"        Slow Request Threshold: {config.SlowRequestThresholdMs}ms\n" +
+                        $"        Ready to accept connections...");
 
                     while (!ct.IsCancellationRequested)
                     {
-                        HttpListenerContext? ctx = null;
+                        HttpListenerContext ctx = null;
                         try
                         {
                             ctx = await _listener.GetContextAsync().ConfigureAwait(false);
 
-                            // Ejecutar el pipeline de middlewares
-                            await _middlewarePipeline.ExecuteAsync(ctx);
-
-                            // Si después de los middlewares la respuesta no se ha cerrado, intentar manejar la ruta
-                            if (ctx.Response.OutputStream.CanWrite)
+                            // Procesar la solicitud en un hilo separado para no bloquear la aceptación de nuevas conexiones
+                            _ = Task.Run(async () =>
                             {
-                                bool handled = await _router.TryHandleAsync(ctx.Request.Url!.AbsolutePath, ctx);
-                                if (!handled)
+                                try
                                 {
-                                    ctx.Response.StatusCode = 404;
-                                    ctx.Response.Close();
+                                    // Ejecutar el pipeline de middlewares
+                                    await _middlewarePipeline.ExecuteAsync(ctx);
+
+                                    // Verificar si la respuesta sigue siendo válida antes de procesar
+                                    try
+                                    {
+                                        if (!ctx.Response.OutputStream.CanWrite)
+                                        {
+                                            _logger.LogInformation("[HTTP] Request processing info:\n" +
+                                                "        Status: Response stream closed by middleware\n" +
+                                                "        Action: Skipping router processing\n" +
+                                                "        Reason: Middleware already handled the response");
+                                            return;
+                                        }
+                                    }
+                                    catch (ObjectDisposedException)
+                                    {
+                                        // Response already disposed by middleware, skip processing
+                                        return;
+                                    }
+
+                                    bool handled = await _router.TryHandleAsync(ctx.Request.Url!.AbsolutePath, ctx);
+                                    if (!handled)
+                                    {
+                                        try
+                                        {
+                                            if (ctx.Response.OutputStream.CanWrite)
+                                            {
+                                                await ErrorHandler.SendErrorResponse(ctx, HttpStatusCode.NotFound, "Endpoint not found");
+                                            }
+                                        }
+                                        catch (ObjectDisposedException)
+                                        {
+                                            // Response already disposed, ignore
+                                        }
+                                    }
                                 }
-                            }
+                                catch (Exception ex)
+                                {
+                                    _logger.LogError($"[HTTP] Request processing error: {ex}");
+                                    try
+                                    {
+                                        await ErrorHandler.SendErrorResponse(ctx, HttpStatusCode.InternalServerError, "Internal server error");
+                                    }
+                                    catch
+                                    {
+                                        // Ignore secondary errors
+                                    }
+                                }
+                            }, ct);
                         }
                         catch (HttpListenerException ex) when (ex.ErrorCode == 995)
                         {
@@ -130,7 +218,17 @@ namespace FastApi_NetCore.Services
                         catch (Exception ex)
                         {
                             _logger.LogError($"[HTTP] Loop error: {ex}");
-                            if (ctx != null) TryWrite500(ctx.Response);
+                            if (ctx != null)
+                            {
+                                try
+                                {
+                                    await ErrorHandler.SendErrorResponse(ctx, HttpStatusCode.InternalServerError, "Internal server error");
+                                }
+                                catch
+                                {
+                                    // Ignore secondary errors
+                                }
+                            }
                         }
                     }
                 }, ct);
@@ -155,7 +253,9 @@ namespace FastApi_NetCore.Services
 
             public async Task StopAsync(CancellationToken token)
             {
-                _logger.LogInformation("HTTP server stopping...");
+                _logger.LogInformation("[HTTP] Server shutdown initiated:\n" +
+                    "        Status: Gracefully stopping...\n" +
+                    "        Action: Canceling accept loop and closing listener");
 
                 try { _acceptLoopCts?.Cancel(); } catch { }
                 try { _listener.Stop(); } catch { }
@@ -165,7 +265,10 @@ namespace FastApi_NetCore.Services
                     try { await Task.WhenAny(_acceptLoop, Task.Delay(3000, token)); } catch { }
                 }
 
-                _logger.LogInformation("HTTP server stopped");
+                _logger.LogInformation("[HTTP] Server shutdown completed:\n" +
+                    "        Status: Stopped\n" +
+                    "        All connections: Closed\n" +
+                    "        Resources: Released");
             }
 
             public void Dispose()

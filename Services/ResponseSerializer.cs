@@ -14,6 +14,7 @@ namespace FastApi_NetCore.Services
         Task SerializeAsync(HttpListenerResponse response, object data);
     }
 
+
     public class JsonResponseSerializer : IResponseSerializer
     {
         public bool CanHandle(string acceptHeader)
@@ -29,7 +30,12 @@ namespace FastApi_NetCore.Services
             var buf = Encoding.UTF8.GetBytes(json);
             response.ContentType = "application/json; charset=utf-8";
             response.ContentLength64 = buf.Length;
-            await response.OutputStream.WriteAsync(buf, 0, buf.Length);
+
+            if (response.OutputStream.CanWrite)
+            {
+                await response.OutputStream.WriteAsync(buf, 0, buf.Length);
+                await response.OutputStream.FlushAsync();
+            }
         }
     }
 
@@ -50,10 +56,14 @@ namespace FastApi_NetCore.Services
             var buf = Encoding.UTF8.GetBytes(xml);
             response.ContentType = "application/xml; charset=utf-8";
             response.ContentLength64 = buf.Length;
-            await response.OutputStream.WriteAsync(buf, 0, buf.Length);
+
+            if (response.OutputStream.CanWrite)
+            {
+                await response.OutputStream.WriteAsync(buf, 0, buf.Length);
+                await response.OutputStream.FlushAsync();
+            }
         }
     }
-
     public class ResponseSerializer : IHttpResponseHandler
     {
         private readonly IResponseSerializer[] _serializers;
@@ -74,22 +84,52 @@ namespace FastApi_NetCore.Services
 
             try
             {
+                // Verificar si la respuesta ya está cerrada
+                if (!response.OutputStream.CanWrite)
+                    return;
+
                 var serializer = _serializers.FirstOrDefault(s => s.CanHandle(acceptHeader))
-                                ?? _serializers.First(); // Default to first (JSON)
+                                ?? _serializers.First();
 
                 await serializer.SerializeAsync(response, data);
+                
+                // Flush inmediatamente después de escribir
+                if (response.OutputStream.CanWrite)
+                {
+                    await response.OutputStream.FlushAsync();
+                }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error al serializar respuesta: {ex.Message}");
-                response.StatusCode = 500;
+                Console.WriteLine($"Error serializing response: {ex.Message}");
+                try
+                {
+                    response.StatusCode = 500;
+                    if (response.OutputStream.CanWrite)
+                    {
+                        var errorMsg = Encoding.UTF8.GetBytes("Internal Server Error");
+                        await response.OutputStream.WriteAsync(errorMsg, 0, errorMsg.Length);
+                        await response.OutputStream.FlushAsync();
+                    }
+                }
+                catch
+                {
+                    // Ignore secondary errors
+                }
             }
             finally
             {
-                try { response.OutputStream.Close(); } catch { }
-                if (closeConnection)
+                try
                 {
-                    try { response.Close(); } catch { }
+                    if (closeConnection)
+                    {
+                        response.OutputStream.Close();
+                        response.Close();
+                    }
+                }
+                catch
+                {
+                    // Ignore errors when closing
                 }
             }
         }

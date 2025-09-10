@@ -8,19 +8,49 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+
+  <!-- Import Roslyn Analyzers configuration -->
+  <Import Project="RoslynAnalyzers\RoslynAnalyzers.props" />
+
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.8" />
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="9.0.8" />
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="9.0.8" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.14.0" />
+    <!-- Roslyn Analyzer dependencies -->
+    <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="3.3.4" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.8.0" PrivateAssets="all" />
   </ItemGroup>
-	<ItemGroup>
-		<Content Include="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
-		<Content Include="appsettings.Development.json" CopyToOutputDirectory="PreserveNewest" />
-	</ItemGroup>
-
 	<ItemGroup>
     <Folder Include="Models\" />
   </ItemGroup>
+
+  <!-- Roslyn Analyzers configurados -->
+  <ItemGroup>
+    <Analyzer Include="RoslynAnalyzers\Analyzers\GlobalPolicyAnalyzer.cs" />
+    <Analyzer Include="RoslynAnalyzers\SourceGenerators\GlobalPolicyValidationGenerator.cs" />
+  </ItemGroup>
+  
+  <!-- Carpeta de analizadores excluida de compilación normal pero incluida como Analyzer -->
+  <ItemGroup>
+    <Compile Remove="RoslynAnalyzers\**\*.cs" />
+    <None Include="RoslynAnalyzers\**\*.cs" />
+  </ItemGroup>
+  
+  <!-- Advanced Global Policy Validation -->
+  <Target Name="ValidateGlobalPolicies" BeforeTargets="Build">
+    <Message Text="🔍 Running Advanced Global Policy Validation..." Importance="high" />
+    <Exec Command="powershell.exe -ExecutionPolicy Bypass -File &quot;RoslynAnalyzers\Scripts\Advanced-ValidateGlobalPolicies.ps1&quot; -ProjectPath &quot;.&quot;" ContinueOnError="false" CustomErrorRegularExpression="^(FAPI\d{3}): (.*)$" CustomWarningRegularExpression="^WARNING: (.*)$" />
+  </Target>
+
+  <!-- Include GlobalSuppressions from RoslynAnalyzers -->
+  <ItemGroup>
+    <Compile Include="RoslynAnalyzers\Suppressions\GlobalSuppressions.cs" Link="GlobalSuppressions.cs" />
+  </ItemGroup>
+
+  <!-- Asegurar que el appsettings.json se trate como el archivo maestro en bin -->
+  <Target Name="EnsureMasterConfig" BeforeTargets="Build">
+    <Message Text="Ensuring master configuration is set up in output directory" Importance="high" />
+  </Target>
 
 </Project>

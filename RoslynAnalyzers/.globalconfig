@@ -1,0 +1,74 @@
+# FastApi NetCore - Global Analyzer Configuration
+# Esta configuración aplica a todos los analizadores Roslyn del proyecto
+
+is_global = true
+
+# ===================================
+# 🔐 GLOBAL POLICY ANALYZERS
+# ===================================
+
+# FAPI001: Conflicto de atributos [Authorize] - ERROR crítico de seguridad
+dotnet_diagnostic.FAPI001.severity = error
+
+# FAPI002: Conflicto de atributos [RateLimit] - ERROR crítico de seguridad  
+dotnet_diagnostic.FAPI002.severity = error
+
+# FAPI003: Conflicto de atributos [IpRange] - ERROR crítico de seguridad
+dotnet_diagnostic.FAPI003.severity = error
+
+# FAPI004: Información sobre políticas globales - INFO habilitado
+dotnet_diagnostic.FAPI004.severity = suggestion
+
+# ===================================
+# 🚀 FUTURE PERFORMANCE ANALYZERS
+# ===================================
+
+# FAPI100: Orden de middleware - WARNING de rendimiento
+dotnet_diagnostic.FAPI100.severity = warning
+
+# ===================================
+# 🏗️ FUTURE ARCHITECTURE ANALYZERS  
+# ===================================
+
+# FAPI200: Violación de capas - ERROR de arquitectura
+dotnet_diagnostic.FAPI200.severity = error
+
+# ===================================
+# 📝 ANALYZER BEHAVIOR CONFIGURATION
+# ===================================
+
+# Solo analizar archivos en carpetas específicas
+dotnet_analyzer.location_kind = source_file
+
+# Excluir archivos generados automáticamente
+generated_code = ignore
+
+# ===================================
+# 📋 HANDLER-SPECIFIC RULES
+# ===================================
+
+# Solo aplicar reglas FAPI001-FAPI003 a archivos en carpeta Handlers/
+[Handlers/**.cs]
+dotnet_diagnostic.FAPI001.severity = error
+dotnet_diagnostic.FAPI002.severity = error  
+dotnet_diagnostic.FAPI003.severity = error
+dotnet_diagnostic.FAPI004.severity = suggestion
+
+# En otras carpetas, solo mostrar como información
+[Core/**.cs]
+dotnet_diagnostic.FAPI001.severity = none
+dotnet_diagnostic.FAPI002.severity = none
+dotnet_diagnostic.FAPI003.severity = none
+dotnet_diagnostic.FAPI004.severity = none
+
+[Features/**.cs]
+dotnet_diagnostic.FAPI001.severity = none
+dotnet_diagnostic.FAPI002.severity = none
+dotnet_diagnostic.FAPI003.severity = none
+dotnet_diagnostic.FAPI004.severity = none
+
+[Services/**.cs]
+dotnet_diagnostic.FAPI001.severity = none
+dotnet_diagnostic.FAPI002.severity = none
+dotnet_diagnostic.FAPI003.severity = none
+dotnet_diagnostic.FAPI004.severity = none

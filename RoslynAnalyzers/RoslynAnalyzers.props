@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project>
+
+  <PropertyGroup>
+    <AnalyzerProjectName>FastApi NetCore - Roslyn Analyzers</AnalyzerProjectName>
+    <AnalyzerVersion>1.0.0</AnalyzerVersion>
+    <AnalyzerDescription>Custom analyzers for FastApi NetCore framework to ensure global policy compliance and code quality</AnalyzerDescription>
+  </PropertyGroup>
+
+  <!-- Configuración de analizadores -->
+  <PropertyGroup>
+    <EnableAnalyzers>true</EnableAnalyzers>
+    <TreatAnalyzerWarningsAsErrors>false</TreatAnalyzerWarningsAsErrors>
+    <RunAnalyzersDuringLiveAnalysis>true</RunAnalyzersDuringLiveAnalysis>
+    <RunAnalyzersDuringBuild>true</RunAnalyzersDuringBuild>
+  </PropertyGroup>
+
+  <!-- Configuración de severidad por defecto -->
+  <PropertyGroup>
+    <WarningsAsErrors />
+    <WarningsNotAsErrors />
+    <!-- FAPI001-FAPI003 son errores críticos de seguridad -->
+    <MSBuildTreatWarningsAsErrors>false</MSBuildTreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <!-- Configuración específica de reglas -->
+  <ItemGroup>
+    <GlobalAnalyzerConfigFiles Include="RoslynAnalyzers\.globalconfig" />
+  </ItemGroup>
+
+  <!-- Mensajes informativos durante la compilación -->
+  <Target Name="ShowAnalyzerInfo" BeforeTargets="CoreCompile">
+    <Message Text="🔍 FastApi NetCore Analyzers v$(AnalyzerVersion) - Validating global policies..." Importance="high" />
+  </Target>
+
+</Project>
