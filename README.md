@@ -102,7 +102,7 @@ graph TB
 #### **1. JWT Authentication**
 ```csharp
 [Authorize(Type = AuthorizationType.JWT, Roles = "Admin,Manager")]
-public async Task SecureEndpoint(HttpListenerContext context)
+internal async Task SecureEndpoint(HttpListenerContext context)
 {
     // Solo usuarios con roles Admin o Manager pueden acceder
 }
@@ -111,7 +111,7 @@ public async Task SecureEndpoint(HttpListenerContext context)
 #### **2. IP Range Validation**  
 ```csharp
 [IpRange(new[] { "192.168.1.0/24", "10.0.0.1-10.0.0.100" })]
-public async Task InternalEndpoint(HttpListenerContext context)
+internal async Task InternalEndpoint(HttpListenerContext context)
 {
     // Solo IPs de redes internas pueden acceder
 }
@@ -460,6 +460,9 @@ dotnet run
 ### 📋 **Ejemplos de Políticas por Controlador**
 
 #### **🔒 Controlador con Política Global (Recomendado)**
+
+> **⚠️ IMPORTANTE**: Usar **`internal`** para clases y métodos de handlers, **NO** `public`. Esto mantiene la API interna del ensamblado.
+
 ```csharp
 /// <summary>
 /// Todas las operaciones administrativas requieren JWT + rol Admin
@@ -700,6 +703,8 @@ Accept: application/json
 
 ## 🔬 Ejemplos de Endpoints
 
+> **⚠️ Importante sobre Access Modifiers**: Todas las clases de handlers y métodos de endpoints deben usar el modificador de acceso `internal` en lugar de `public`. Esto es parte de las convenciones de arquitectura del framework para mantener el encapsulamiento apropiado.
+
 ### 📊 **Catálogo de Endpoints Disponibles**
 
 | Endpoint | Método | Autenticación | Rate Limit | Descripción |
@@ -927,9 +932,9 @@ ServerConfig__IpWhitelist__1=172.16.0.0/12
 ### 🛠️ **Crear Middleware Personalizado**
 
 ```csharp
-public class CustomSecurityMiddleware : IMiddleware
+internal class CustomSecurityMiddleware : IMiddleware
 {
-    public async Task InvokeAsync(HttpListenerContext context, Func<Task> next)
+    internal async Task InvokeAsync(HttpListenerContext context, Func<Task> next)
     {
         // Tu lógica de seguridad personalizada
         if (await ValidateCustomSecurity(context))
