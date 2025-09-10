@@ -2,6 +2,7 @@
 using FastApi_NetCore.Core.Interfaces;
 using FastApi_NetCore.Features.Authentication;
 using FastApi_NetCore.Features.Middleware;
+using FastApi_NetCore.Features.Security;
 using FastApi_NetCore.Core.Utils;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -74,7 +75,13 @@ namespace FastApi_NetCore.Services
                 _middlewarePipeline = new MiddlewarePipeline();
 
                 // Configurar middlewares en orden optimizado para alta concurrencia
-                // Primero: Request Tracing para rastrear todas las solicitudes
+                // SEGURIDAD CRÍTICA - Primero: Protecciones básicas de input y reconnaissance
+                _middlewarePipeline.Use(new InputValidationMiddleware());
+                _middlewarePipeline.Use(new ReconnaissanceDetectionMiddleware());
+                _middlewarePipeline.Use(new ResourceProtectionMiddleware());
+                _middlewarePipeline.Use(new ServerFingerprintingMiddleware());
+                
+                // Segundo: Request Tracing para rastrear todas las solicitudes
                 if (config.EnableRequestTracing)
                 {
                     _middlewarePipeline.Use(new RequestTracingMiddleware(serverConfig, logger));
@@ -119,6 +126,9 @@ namespace FastApi_NetCore.Services
                         rateLimitConfig,
                         _serverConfig));
                 }
+
+                // Timing Attack Prevention - justo antes del router
+                _middlewarePipeline.Use(new TimingAttackPreventionMiddleware());
 
                 _middlewarePipeline.Use(new ServiceProviderMiddleware(serviceProvider));
             }
