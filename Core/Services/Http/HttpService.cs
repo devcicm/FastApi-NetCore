@@ -3,6 +3,7 @@ using FastApi_NetCore.Core.Interfaces;
 using FastApi_NetCore.Features.Authentication;
 using FastApi_NetCore.Features.Middleware;
 using FastApi_NetCore.Features.Security;
+using FastApi_NetCore.Features.RequestProcessing;
 using FastApi_NetCore.Core.Utils;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -32,6 +33,10 @@ namespace FastApi_NetCore.Core.Services.Http
             private readonly ILoggerService _logger;
             private readonly IApiKeyService _apiKeyService;
             private readonly IRateLimitService _rateLimitService;
+            private readonly PartitionedRequestProcessor _requestProcessor;
+            private readonly ResourceManager _resourceManager;
+            private readonly StringBuilderPool _stringBuilderPool;
+            private readonly MemoryStreamPool _memoryStreamPool;
             private CancellationTokenSource? _acceptLoopCts;
             private Task? _acceptLoop;
 
@@ -43,13 +48,26 @@ namespace FastApi_NetCore.Core.Services.Http
                     IServiceProvider serviceProvider,
                     ILoggerService logger,
                     IApiKeyService apiKeyService,
-                    IRateLimitService rateLimitService)
+                    IRateLimitService rateLimitService,
+                    PartitionedRequestProcessor requestProcessor)
             {
                 _router = router;
                 _serverConfig = serverConfig;
                 _logger = logger;
                 _apiKeyService = apiKeyService;
                 _rateLimitService = rateLimitService;
+                _requestProcessor = requestProcessor;
+                
+                // Inicializar gestores de recursos
+                _resourceManager = new ResourceManager(
+                    logInfo: msg => _logger.LogInformation(msg),
+                    logWarning: msg => _logger.LogWarning(msg),
+                    logDebug: msg => _logger.LogDebug(msg));
+                _stringBuilderPool = new StringBuilderPool(maxSize: 50, _logger);
+                _memoryStreamPool = new MemoryStreamPool(maxSize: 20, _logger);
+                
+                // Registrar el HttpListener como recurso gestionado
+                _resourceManager.RegisterResource("HttpListener", _listener, ResourceLifetime.Application);
 
                 var config = serverConfig.Value;
                 _listener.Prefixes.Add(config.HttpPrefix);
@@ -161,18 +179,18 @@ namespace FastApi_NetCore.Core.Services.Http
                         {
                             ctx = await _listener.GetContextAsync().ConfigureAwait(false);
 
-                            // Procesar la solicitud en un hilo separado para no bloquear la aceptación de nuevas conexiones
-                            _ = Task.Run(async () =>
+                            // Encolar la solicitud en el procesador particionado para alta concurrencia
+                            var enqueued = await _requestProcessor.EnqueueRequestAsync(ctx, async (context) =>
                             {
                                 try
                                 {
                                     // Ejecutar el pipeline de middlewares
-                                    await _middlewarePipeline.ExecuteAsync(ctx);
+                                    await _middlewarePipeline.ExecuteAsync(context);
 
                                     // Verificar si la respuesta sigue siendo válida antes de procesar
                                     try
                                     {
-                                        if (!ctx.Response.OutputStream.CanWrite)
+                                        if (!context.Response.OutputStream.CanWrite)
                                         {
                                             _logger.LogInformation("[HTTP] Request processing info:\n" +
                                                 "        Status: Response stream closed by middleware\n" +
@@ -187,14 +205,14 @@ namespace FastApi_NetCore.Core.Services.Http
                                         return;
                                     }
 
-                                    bool handled = await _router.TryHandleAsync(ctx.Request.Url!.AbsolutePath, ctx);
+                                    bool handled = await _router.TryHandleAsync(context.Request.Url!.AbsolutePath, context);
                                     if (!handled)
                                     {
                                         try
                                         {
-                                            if (ctx.Response.OutputStream.CanWrite)
+                                            if (context.Response.OutputStream.CanWrite)
                                             {
-                                                await ErrorHandler.SendErrorResponse(ctx, HttpStatusCode.NotFound, "Endpoint not found");
+                                                await ErrorHandler.SendErrorResponse(context, HttpStatusCode.NotFound, "Endpoint not found");
                                             }
                                         }
                                         catch (ObjectDisposedException)
@@ -208,14 +226,36 @@ namespace FastApi_NetCore.Core.Services.Http
                                     _logger.LogError($"[HTTP] Request processing error: {ex}");
                                     try
                                     {
-                                        await ErrorHandler.SendErrorResponse(ctx, HttpStatusCode.InternalServerError, "Internal server error");
+                                        await ErrorHandler.SendErrorResponse(context, HttpStatusCode.InternalServerError, "Internal server error");
                                     }
                                     catch
                                     {
                                         // Ignore secondary errors
                                     }
                                 }
-                            }, ct);
+                            });
+
+                            // Si no se pudo encolar, procesar de forma síncrona como fallback
+                            if (!enqueued)
+                            {
+                                _logger.LogWarning("[HTTP] Request queue full, processing synchronously");
+                                _ = Task.Run(async () =>
+                                {
+                                    try
+                                    {
+                                        await _middlewarePipeline.ExecuteAsync(ctx);
+                                        await _router.TryHandleAsync(ctx.Request.Url!.AbsolutePath, ctx);
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        _logger.LogError($"[HTTP] Fallback processing error: {ex}");
+                                    }
+                                    finally
+                                    {
+                                        try { ctx.Response.Close(); } catch { }
+                                    }
+                                });
+                            }
                         }
                         catch (HttpListenerException ex) when (ex.ErrorCode == 995)
                         {
@@ -283,8 +323,45 @@ namespace FastApi_NetCore.Core.Services.Http
 
             public void Dispose()
             {
-                try { _listener.Close(); } catch { }
-                _acceptLoopCts?.Dispose();
+                _logger.LogInformation("[HTTP-SERVICE] Initiating graceful shutdown...");
+                
+                // Marcar recursos para limpieza con delay para permitir requests en progreso
+                _resourceManager?.MarkForCleanup("HttpListener", TimeSpan.FromSeconds(5));
+                
+                // Limpiar middleware pipeline primero
+                try
+                {
+                    _middlewarePipeline?.Dispose();
+                    _logger.LogInformation("[HTTP-SERVICE] Middleware pipeline disposed");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning($"[HTTP-SERVICE] Error disposing middleware pipeline: {ex.Message}");
+                }
+                
+                // Limpiar pools de objetos
+                _stringBuilderPool?.Dispose();
+                _memoryStreamPool?.Dispose();
+                
+                // Limpiar recursos específicos
+                try 
+                { 
+                    if (_listener.IsListening)
+                    {
+                        _listener.Stop();
+                        _logger.LogInformation("[HTTP-SERVICE] HttpListener stopped");
+                    }
+                } catch (Exception ex) 
+                { 
+                    _logger.LogWarning($"[HTTP-SERVICE] Error stopping listener: {ex.Message}");
+                }
+                
+                try { _acceptLoopCts?.Dispose(); } catch { }
+                
+                // Limpiar el ResourceManager al final
+                _resourceManager?.Dispose();
+                
+                _logger.LogInformation("[HTTP-SERVICE] Graceful shutdown completed");
             }
         }
     }

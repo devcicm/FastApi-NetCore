@@ -5,6 +5,7 @@ using System.Net;
 using System.Text;
 using System.Threading.Tasks;
 using System.Xml.Serialization;
+using System.IO;
 
 namespace FastApi_NetCore.Core.Utils
 {
@@ -41,6 +42,8 @@ namespace FastApi_NetCore.Core.Utils
 
     public class XmlResponseSerializer : IResponseSerializer
     {
+        private static readonly StringBuilderPool _stringBuilderPool = new StringBuilderPool(10);
+
         public bool CanHandle(string acceptHeader)
         {
             return acceptHeader.Contains("application/xml") ||
@@ -50,7 +53,11 @@ namespace FastApi_NetCore.Core.Utils
         public async Task SerializeAsync(HttpListenerResponse response, object data)
         {
             var serializer = new XmlSerializer(data.GetType());
-            using var writer = new StringWriter();
+            
+            // Usar pool de StringBuilder para evitar allocaciones
+            using var sbWrapper = _stringBuilderPool.Get();
+            using var writer = new StringWriter(sbWrapper.Object);
+            
             serializer.Serialize(writer, data);
             var xml = writer.ToString();
             var buf = Encoding.UTF8.GetBytes(xml);

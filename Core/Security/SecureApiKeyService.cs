@@ -12,12 +12,12 @@ namespace FastApi_NetCore.Core.Security
     /// <summary>
     /// Servicio seguro para API Keys con hashing y protección contra timing attacks
     /// </summary>
-    internal class SecureApiKeyService : IApiKeyService
+    public class SecureApiKeyService : IApiKeyService
     {
         private readonly Dictionary<string, SecureApiKeyData> _hashedKeys;
         private readonly string _globalSalt;
         
-        internal SecureApiKeyService()
+        public SecureApiKeyService()
         {
             _globalSalt = GenerateRandomSalt();
             _hashedKeys = new Dictionary<string, SecureApiKeyData>();

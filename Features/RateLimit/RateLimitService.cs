@@ -1,9 +1,11 @@
 ﻿using FastApi_NetCore.Core.Configuration;
 using FastApi_NetCore.Core.Interfaces;
+using FastApi_NetCore.Core.Utils;
 using Microsoft.Extensions.Options;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Threading;
 
 namespace FastApi_NetCore.Features.RateLimit
 {
@@ -20,36 +22,34 @@ namespace FastApi_NetCore.Features.RateLimit
         public bool IsRequestAllowed(string clientId, string endpoint)
         {
             var rule = GetRateLimitRule(clientId, endpoint);
-            var now = DateTime.UtcNow;
+            var nowTicks = DateTime.UtcNow.Ticks;
+            var cutoffTicks = nowTicks - rule.TimeWindow.Ticks;
 
-            if (!_clientRequests.TryGetValue(clientId, out var clientInfo))
-            {
-                clientInfo = new ClientRateLimitInfo();
-                _clientRequests[clientId] = clientInfo;
-            }
+            var clientInfo = _clientRequests.GetOrAdd(clientId, _ => new ClientRateLimitInfo());
 
-            // Clean up old entries
-            clientInfo.RequestTimestamps.RemoveAll(timestamp => now - timestamp > rule.TimeWindow);
+            // Clean up old entries using lock-free operations
+            clientInfo.CleanOldTimestamps(cutoffTicks);
 
-            if (clientInfo.RequestTimestamps.Count >= rule.RequestLimit)
+            if (clientInfo.GetCurrentCount() >= rule.RequestLimit)
             {
                 return false;
             }
 
-            clientInfo.RequestTimestamps.Add(now);
+            clientInfo.AddTimestamp(nowTicks);
             return true;
         }
 
         public int GetRetryAfter(string clientId, string endpoint)
         {
             var rule = GetRateLimitRule(clientId, endpoint);
-            var now = DateTime.UtcNow;
+            var nowTicks = DateTime.UtcNow.Ticks;
 
-            if (_clientRequests.TryGetValue(clientId, out var clientInfo) && clientInfo.RequestTimestamps.Count > 0)
+            if (_clientRequests.TryGetValue(clientId, out var clientInfo) && 
+                clientInfo.TryGetOldestTimestamp(out var oldestTimestampTicks))
             {
-                var oldestTimestamp = clientInfo.RequestTimestamps[0];
-                var timePassed = now - oldestTimestamp;
-                return (int)(rule.TimeWindow - timePassed).TotalSeconds;
+                var timePassedTicks = nowTicks - oldestTimestampTicks;
+                var remainingTicks = rule.TimeWindow.Ticks - timePassedTicks;
+                return (int)Math.Max(0, TimeSpan.FromTicks(remainingTicks).TotalSeconds);
             }
 
             return (int)rule.TimeWindow.TotalSeconds;
@@ -79,7 +79,32 @@ namespace FastApi_NetCore.Features.RateLimit
 
         private class ClientRateLimitInfo
         {
-            public List<DateTime> RequestTimestamps { get; set; } = new List<DateTime>();
+            private readonly ConcurrentQueue<long> _requestTimestamps = new();
+            private readonly LockFreeCounters.AtomicCounter _requestCount = new();
+
+            public void AddTimestamp(long timestampTicks)
+            {
+                _requestTimestamps.Enqueue(timestampTicks);
+                _requestCount.Increment();
+            }
+
+            public void CleanOldTimestamps(long cutoffTicks)
+            {
+                while (_requestTimestamps.TryPeek(out var timestamp) && timestamp < cutoffTicks)
+                {
+                    if (_requestTimestamps.TryDequeue(out _))
+                    {
+                        _requestCount.Decrement();
+                    }
+                }
+            }
+
+            public long GetCurrentCount() => _requestCount.Value;
+
+            public bool TryGetOldestTimestamp(out long timestamp)
+            {
+                return _requestTimestamps.TryPeek(out timestamp);
+            }
         }
     }
 }

@@ -5,11 +5,13 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
 using FastApi_NetCore.Core.Interfaces;
 
 namespace FastApi_NetCore.Features.Middleware
 {
-    public class RequestTracingMiddleware : IMiddleware
+    public class RequestTracingMiddleware : MiddlewareBase
     {
         private readonly ServerConfig _serverConfig;
         private readonly ILoggerService _logger;
@@ -27,11 +29,11 @@ namespace FastApi_NetCore.Features.Middleware
             _cleanupTimer = new Timer(CleanupCompletedTraces, null, TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(5));
         }
 
-        public async Task InvokeAsync(HttpListenerContext context, Func<Task> next)
+        public override async Task InvokeAsync(HttpListenerContext context, Func<Task> next, CancellationToken cancellationToken)
         {
             if (!_serverConfig.EnableRequestTracing)
             {
-                await next();
+                await ExecuteNextAsync(next, cancellationToken);
                 return;
             }
 
@@ -61,11 +63,22 @@ namespace FastApi_NetCore.Features.Middleware
                 // Log inicio de solicitud
                 LogRequestStart(requestTrace);
 
-                // Ejecutar el siguiente middleware
-                await next();
+                // Check for cancellation before proceeding
+                ThrowIfCancellationRequested(cancellationToken);
+
+                // Ejecutar el siguiente middleware con protección de timeout
+                await ExecuteNextAsync(next, cancellationToken);
 
                 // Capturar información de respuesta exitosa
                 CaptureResponseInfo(context, requestTrace, true);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                // Handle cancellation specifically
+                requestTrace.ErrorMessage = "Request cancelled/timeout";
+                CaptureResponseInfo(context, requestTrace, false);
+                LogSecurityEvent(requestTrace, "REQUEST_CANCELLED", "Request was cancelled or timed out");
+                throw;
             }
             catch (Exception ex)
             {
@@ -268,25 +281,45 @@ namespace FastApi_NetCore.Features.Middleware
             return importantHeaders.Contains(headerName);
         }
 
-        private void CleanupCompletedTraces(object? state)
+        private async void CleanupCompletedTraces(object? state)
         {
-            var cutoff = DateTime.UtcNow.AddMinutes(-30); // Mantener trazas por 30 minutos
-            var toRemove = _activeRequests
-                .Where(kvp => kvp.Value.IsCompleted && kvp.Value.RequestEndTime < cutoff)
-                .Select(kvp => kvp.Key)
-                .ToList();
-
-            foreach (var traceId in toRemove)
+            try
             {
-                _activeRequests.TryRemove(traceId, out _);
+                // Use a short timeout for cleanup operations
+                using var cleanupCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                
+                await ExecuteWithTimeoutAsync(async (cancellationToken) =>
+                {
+                    var cutoff = DateTime.UtcNow.AddMinutes(-30); // Mantener trazas por 30 minutos
+                    var toRemove = _activeRequests
+                        .Where(kvp => kvp.Value.IsCompleted && kvp.Value.RequestEndTime < cutoff)
+                        .Select(kvp => kvp.Key)
+                        .ToList();
+
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    foreach (var traceId in toRemove)
+                    {
+                        _activeRequests.TryRemove(traceId, out _);
+                        cancellationToken.ThrowIfCancellationRequested();
+                    }
+
+                    if (toRemove.Count > 0)
+                    {
+                        _logger.LogInformation($"[TRACE] Cleanup completed:\n" +
+                            $"        Removed traces: {toRemove.Count}\n" +
+                            $"        Active traces: {_activeRequests.Count}\n" +
+                            $"        Memory optimized");
+                    }
+                }, cleanupCts.Token);
             }
-
-            if (toRemove.Count > 0)
+            catch (OperationCanceledException)
             {
-                _logger.LogInformation($"[TRACE] Cleanup completed:\n" +
-                    $"        Removed traces: {toRemove.Count}\n" +
-                    $"        Active traces: {_activeRequests.Count}\n" +
-                    $"        Memory optimized");
+                _logger.LogWarning("[TRACE] Cleanup operation timed out");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"[TRACE] Cleanup failed: {ex.Message}");
             }
         }
 

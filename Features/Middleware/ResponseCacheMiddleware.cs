@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
+using System.IO.Compression;
 using FastApi_NetCore.Core.Interfaces;
 
 namespace FastApi_NetCore.Features.Middleware

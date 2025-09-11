@@ -1,12 +1,8 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using System;
 
 namespace FastApi_NetCore.Core.Interfaces
 {
-    public interface ILoggerService
+    public interface ILoggerService : IDisposable
     {
         void LogInformation(string message);
         void LogWarning(string message);

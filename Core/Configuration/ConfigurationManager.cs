@@ -84,7 +84,17 @@ namespace FastApi_NetCore.Core.Configuration
             services.Configure<ServerConfig>(_configuration.GetSection("ServerConfig"));
             services.Configure<RateLimitConfig>(_configuration.GetSection("RateLimitConfig"));
             services.Configure<ApiKeyConfig>(_configuration.GetSection("ApiKeyConfig"));
-            services.AddSingleton<ILoggerService, LoggerService>();
+            
+            // Configurar el logger particionado con alta concurrencia
+            services.AddSingleton<ILoggerService>(provider =>
+            {
+                var config = provider.GetRequiredService<Microsoft.Extensions.Options.IOptions<ServerConfig>>();
+                return new PartitionedAsyncLoggerService(config, 
+                    partitionCount: 6,     // 6 partitions para alta concurrencia
+                    channelCapacity: 1500  // 9,000 mensajes totales (6 * 1500)
+                );
+            });
+            
             // Registrar el ConfigurationManager como singleton
             services.AddSingleton<ConfigurationManager>();
         }

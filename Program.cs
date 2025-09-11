@@ -11,6 +11,7 @@ using FastApi_NetCore.Core.Validation;
 using FastApi_NetCore.Core.Security;
 using FastApi_NetCore.Core.Utils;
 using FastApi_NetCore.Core.Services.Http;
+using FastApi_NetCore.Features.RequestProcessing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -86,6 +87,24 @@ public class Program
                 services.AddSingleton<HierarchicalPolicyResolver>();
                 services.AddSingleton<PolicyConflictValidator>(); // Mantener para compatibilidad
 
+                // Registrar servicios de manejo de recursos
+                services.AddSingleton<ApplicationLifecycleManager>();
+                services.AddSingleton<ResourceManager>();
+                services.AddSingleton<StringBuilderPool>();
+                services.AddSingleton<MemoryStreamPool>();
+
+                // Configurar el procesador de requests particionado
+                services.AddSingleton(provider =>
+                {
+                    return new PartitionedRequestProcessor(new RequestProcessorConfiguration
+                    {
+                        BasePartitions = 4,              // 4 partitions base por prioridad
+                        EnableProcessingLogs = !serverConfig.IsProduction, // Solo en desarrollo
+                        EnableDetailedMetrics = true,
+                        RequestTimeout = TimeSpan.FromSeconds(30)
+                    });
+                });
+
                 // Registrar otros servicios
                 services.AddSingleton<IHttpRouter, HttpRouter>();
 
@@ -115,7 +134,32 @@ public class Program
             .UseWindowsService()
             .Build();
 
-        await host.RunAsync();
+        // Configurar lifecycle management
+        var lifecycleManager = host.Services.GetRequiredService<ApplicationLifecycleManager>();
+        var logger = host.Services.GetRequiredService<ILoggerService>();
+        
+        // Registrar servicios principales para limpieza
+        lifecycleManager.RegisterDisposable(host.Services.GetRequiredService<ResourceManager>());
+        lifecycleManager.RegisterDisposable(host.Services.GetRequiredService<StringBuilderPool>());
+        lifecycleManager.RegisterDisposable(host.Services.GetRequiredService<MemoryStreamPool>());
+        lifecycleManager.RegisterDisposable(host.Services.GetRequiredService<PartitionedRequestProcessor>());
+        lifecycleManager.RegisterDisposable(logger);
+        
+        // Registrar el host mismo
+        lifecycleManager.RegisterDisposable(host);
+        
+        logger.LogInformation("[MAIN] Application configured with lifecycle management");
+
+        try
+        {
+            await host.RunAsync();
+        }
+        finally
+        {
+            // Asegurar limpieza al finalizar
+            await lifecycleManager.InitiateGracefulShutdownAsync(TimeSpan.FromSeconds(10));
+            lifecycleManager.Dispose();
+        }
     }
     private static void CheckConfiguration(IConfiguration configuration)
     {
