@@ -57,7 +57,7 @@ namespace FastApi_NetCore.Handlers.Security
         }
 
         [RouteConfiguration("/auth/demo/jwt-required", HttpMethodType.GET)]
-        // TODO: Move to separate JwtDemoHandlers class with global JWT policy
+        // Note: Consider moving to separate JwtDemoHandlers for better organization
         internal async Task JwtRequiredDemo(HttpListenerContext context)
         {
             var user = context.GetUserPrincipal();
@@ -92,7 +92,7 @@ namespace FastApi_NetCore.Handlers.Security
         }
 
         [RouteConfiguration("/auth/demo/admin-only", HttpMethodType.GET)]
-        // TODO: Move to separate AdminDemoHandlers class with global JWT+Admin policy
+        // Note: Consider moving to separate AdminDemoHandlers for better organization
         internal async Task AdminOnlyDemo(HttpListenerContext context)
         {
             var user = context.GetUserPrincipal();

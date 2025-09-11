@@ -2,6 +2,7 @@ using System;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
+using FastApi_NetCore.Features.Middleware;
 
 namespace FastApi_NetCore.Core.Interfaces
 {

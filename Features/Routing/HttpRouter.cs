@@ -480,12 +480,8 @@ namespace FastApi_NetCore.Features.Routing
             // Log precedence information
             var precedenceInfo = GetPrecedenceInfo(classAuth, methodAuth, classIp, methodIp, classRate, methodRate);
 
-            var logMessage = $"[POLICY-RESOLUTION] 🔍 {className}.{methodName} -> {path}\n" +
-                           $"  📋 Final Policies:\n    • {string.Join("\n    • ", policies)}\n" +
-                           $"  📊 Precedence Applied:\n    {precedenceInfo}\n" +
-                           $"  📌 Rule: Handler attributes > Config defaults";
-            
-            _logger.LogInformation(logMessage);
+            // Policy resolution is already handled by HierarchicalPolicyResolver
+            // Remove this duplicate logging
         }
 
         private string GetPrecedenceInfo(

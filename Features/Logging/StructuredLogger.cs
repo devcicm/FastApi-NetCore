@@ -19,7 +19,7 @@ namespace FastApi_NetCore.Features.Logging
                 Category = "HTTP_REQUEST"
             };
 
-            var message = $"[HTTP] {method} {path} → {statusCode} ({durationMs}ms) from {clientIp}";
+            var message = ConsoleLogFormatter.FormatHttpRequest(method, path, statusCode, durationMs, clientIp);
             logger.LogInformation(message);
         }
 
@@ -35,8 +35,7 @@ namespace FastApi_NetCore.Features.Logging
                 Severity = GetSecuritySeverity(eventType)
             };
 
-            var message = $"[SECURITY-{logData.Severity}] {eventType}: {details}";
-            if (clientIp != null) message += $" | IP: {clientIp}";
+            var message = ConsoleLogFormatter.FormatSecurityEvent(eventType, details, clientIp);
             
             if (logData.Severity == "CRITICAL")
                 logger.LogError(message);
@@ -49,10 +48,7 @@ namespace FastApi_NetCore.Features.Logging
         public static void LogPerformanceMetric(ILoggerService logger, string operation, long durationMs, int? throughput = null)
         {
             var performanceLevel = GetPerformanceLevel(durationMs);
-            var message = $"[PERFORMANCE-{performanceLevel}] {operation}: {durationMs}ms";
-            
-            if (throughput.HasValue)
-                message += $" | Throughput: {throughput} ops/sec";
+            var message = ConsoleLogFormatter.FormatPerformanceMetric(operation, durationMs, throughput);
 
             if (performanceLevel == "SLOW")
                 logger.LogWarning(message);

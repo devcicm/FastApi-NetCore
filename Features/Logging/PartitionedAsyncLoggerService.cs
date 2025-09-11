@@ -242,33 +242,12 @@ namespace FastApi_NetCore.Features.Logging
 
         private void WriteLogEntry(LogEntry entry, int partitionId)
         {
-            if (_serverConfig.EnableDetailedLogging)
-            {
-                var structured = new
-                {
-                    id = entry.Id,
-                    timestamp = entry.Timestamp.ToString("yyyy-MM-dd HH:mm:ss.fff"),
-                    level = entry.LevelText,
-                    component = entry.Component,
-                    message = entry.Message,
-                    thread = entry.ThreadId,
-                    process = entry.ProcessId,
-                    partition = partitionId
-                };
-                
-                Console.WriteLine(JsonSerializer.Serialize(structured, new JsonSerializerOptions 
-                { 
-                    WriteIndented = false 
-                }));
-            }
-            else
-            {
-                var levelColor = GetLevelColor(entry.Level);
-                var componentPadded = entry.Component.PadRight(12);
-                var partitionInfo = _partitionCount > 1 ? $"[P{partitionId}]" : "";
-                
-                Console.WriteLine($"{entry.Timestamp:HH:mm:ss.fff} {levelColor}{entry.LevelText,-5}\u001b[0m {componentPadded} {partitionInfo} │ {entry.Message}");
-            }
+            // Always use formatted logging instead of JSON for better readability
+            var levelColor = GetLevelColor(entry.Level);
+            var componentPadded = entry.Component.PadRight(12);
+            var partitionInfo = _partitionCount > 1 ? $"[P{partitionId}]" : "";
+            
+            Console.WriteLine($"{entry.Timestamp:HH:mm:ss.fff} {levelColor}{entry.LevelText,-5}\u001b[0m {componentPadded} {partitionInfo} │ {entry.Message}");
         }
 
         private string GetLevelColor(LogLevel level)

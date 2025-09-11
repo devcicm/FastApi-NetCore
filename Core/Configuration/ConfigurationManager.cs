@@ -22,9 +22,7 @@ namespace FastApi_NetCore.Core.Configuration
                 var configurationSource = string.Empty;
                 var configurationPath = string.Empty;
 
-                Console.WriteLine("==================================================");
-                Console.WriteLine("           CONFIGURATION LOADING");
-                Console.WriteLine("==================================================");
+                Console.WriteLine(ConsoleLogFormatter.FormatSystemStartup());
 
                 // Cargar desde archivo físico en el directorio base (bin)
                 var baseDirectory = AppContext.BaseDirectory;
@@ -37,17 +35,11 @@ namespace FastApi_NetCore.Core.Configuration
                 configurationSource = "PHYSICAL FILE (BIN MASTER)";
                 configurationPath = physicalPath;
                 
-                Console.WriteLine($"✅ Configuration Source: {configurationSource}");
-                Console.WriteLine($"📁 Master File Path: {physicalPath}");
-                Console.WriteLine($"📂 Base Directory: {baseDirectory}");
-                Console.WriteLine($"🔄 Reload on Change: Enabled");
-                
                 if (File.Exists(physicalPath))
                 {
                     var fileInfo = new FileInfo(physicalPath);
-                    Console.WriteLine($"💾 File Size: {fileInfo.Length} bytes");
-                    Console.WriteLine($"📅 Last Modified: {fileInfo.LastWriteTime}");
-                    Console.WriteLine($"🎯 Using BIN directory as configuration master");
+                    Console.WriteLine(ConsoleLogFormatter.FormatConfigurationLoad(
+                        configurationSource, physicalPath, fileInfo.Length, fileInfo.LastWriteTime));
                 }
                 else
                 {

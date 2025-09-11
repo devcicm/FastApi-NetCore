@@ -109,33 +109,11 @@ namespace FastApi_NetCore.Features.Logging
 
         private void WriteLogEntry(LogEntry entry)
         {
-            if (_serverConfig.EnableDetailedLogging)
-            {
-                // Structured format for detailed logging
-                var structured = new
-                {
-                    id = entry.Id,
-                    timestamp = entry.Timestamp.ToString("yyyy-MM-dd HH:mm:ss.fff"),
-                    level = entry.LevelText,
-                    component = entry.Component,
-                    message = entry.Message,
-                    thread = entry.ThreadId,
-                    process = entry.ProcessId
-                };
-                
-                Console.WriteLine(JsonSerializer.Serialize(structured, new JsonSerializerOptions 
-                { 
-                    WriteIndented = false 
-                }));
-            }
-            else
-            {
-                // Clean, readable format for standard logging
-                var levelColor = GetLevelColor(entry.Level);
-                var componentPadded = entry.Component.PadRight(12);
-                
-                Console.WriteLine($"{entry.Timestamp:HH:mm:ss.fff} {levelColor}{entry.LevelText,-5}\u001b[0m {componentPadded} │ {entry.Message}");
-            }
+            // Always use clean, readable format for better console experience
+            var levelColor = GetLevelColor(entry.Level);
+            var componentPadded = entry.Component.PadRight(12);
+            
+            Console.WriteLine($"{entry.Timestamp:HH:mm:ss.fff} {levelColor}{entry.LevelText,-5}\u001b[0m {componentPadded} │ {entry.Message}");
         }
 
         private string GetLevelColor(LogLevel level)

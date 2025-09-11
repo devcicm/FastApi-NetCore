@@ -177,7 +177,7 @@ namespace FastApi_NetCore.Handlers.Business
 
         [RouteConfiguration("/users/{id}", HttpMethodType.DELETE)]
         // NOTE: Global JWT+RateLimit policies apply - Cannot add method-level attributes
-        // TODO: Move to separate AdminUserManagementHandlers with global Admin policy
+        // Note: Consider moving to AdminUserManagementHandlers for better separation
         internal async Task DeleteUser(HttpListenerContext context)
         {
             var user = context.GetUserPrincipal();

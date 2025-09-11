@@ -1,5 +1,6 @@
 using FastApi_NetCore.Core.Attributes;
 using FastApi_NetCore.Core.Configuration;
+using FastApi_NetCore.Features.Logging;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -44,7 +45,7 @@ namespace FastApi_NetCore.Core.Validation
                 return;
             }
 
-            _logger.LogInformation("[HIERARCHICAL-POLICY] Starting intelligent policy resolution...");
+            _logger.LogInformation(ConsoleLogFormatter.FormatHierarchicalPolicyStart());
 
             var handlerTypes = FindAllHandlerTypes();
             var totalEndpoints = 0;
@@ -57,9 +58,7 @@ namespace FastApi_NetCore.Core.Validation
                 policiesApplied += result.PoliciesApplied;
             }
 
-            _logger.LogInformation(
-                "[HIERARCHICAL-POLICY] ✅ Resolution completed: {PoliciesApplied} policies applied across {TotalEndpoints} endpoints",
-                policiesApplied, totalEndpoints);
+            _logger.LogInformation(ConsoleLogFormatter.FormatHierarchicalPolicyComplete(policiesApplied, totalEndpoints));
         }
 
         private IEnumerable<Type> FindAllHandlerTypes()
@@ -141,9 +140,14 @@ namespace FastApi_NetCore.Core.Validation
                 policies.Add($"Rate Limit: {classRateLimit.RequestLimit}/{classRateLimit.TimeWindowSeconds}s");
             }
 
-            _logger.LogInformation(
-                "[SECURITY-POLICY] Global policy for {ClassName}:\n    {Policies}\n    Applied to: ALL methods in this controller",
-                className, string.Join("\n    ", policies));
+            var authInfo = classAuthorize != null ? 
+                $"{(classAuthorize.Type == AuthorizationType.JWT ? "JWT" : "None")} + Roles=[{classAuthorize.Roles ?? ""}]" : "None";
+            var ipInfo = classIpRange?.AllowedRanges?.Length > 0 ? 
+                $"[{string.Join(", ", classIpRange.AllowedRanges)}]" : "[None]";
+            var rateInfo = classRateLimit != null ? 
+                $"{classRateLimit.RequestLimit}/{classRateLimit.TimeWindowSeconds}s" : "No limit";
+            
+            _logger.LogInformation(ConsoleLogFormatter.FormatSecurityPolicy(className, authInfo, ipInfo, rateInfo));
         }
 
         private ResolvedPolicies ResolveEndpointPolicies(
@@ -261,17 +265,10 @@ namespace FastApi_NetCore.Core.Validation
                 policyDetails.Add($"• Rate: {config.RequestLimit}/{config.TimeWindow}s (Source: {policies.RateLimitSource})");
             }
 
-            var logMessage = $"[POLICY-RESOLUTION] 🔍 {className}.{methodName} -> {path}\n" +
-                           $"  📋 Final Policies:\n    {string.Join("\n    ", policyDetails)}";
-
-            if (precedenceDetails.Any())
-            {
-                logMessage += $"\n  📊 Precedence Applied:\n    {string.Join("\n    ", precedenceDetails)}";
-            }
-
-            logMessage += "\n  📌 Rule: Handler attributes > Config defaults";
-
-            _logger.LogInformation(logMessage);
+            _logger.LogInformation(ConsoleLogFormatter.FormatPolicyResolution(
+                className, methodName, path, 
+                policyDetails.ToArray(), 
+                precedenceDetails.ToArray()));
         }
 
         private (int RequestLimit, int TimeWindow)? GetConfigRateLimit(string path)

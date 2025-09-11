@@ -1,17 +1,17 @@
-using FastApi_NetCore.Features.RateLimit;
-﻿using FastApi_NetCore;
+using FastApi_NetCore;
 using FastApi_NetCore.Core.Configuration;
 using FastApi_NetCore.Core.Interfaces;
-using FastApi_NetCore.Features.Middleware;
-using FastApi_NetCore.Features.Routing;
-using FastApi_NetCore.Features.Authentication.TokenGeneration;
-using FastApi_NetCore.Features.Authentication.CredentialManagement;
-using FastApi_NetCore.Features.Authentication;
-using FastApi_NetCore.Core.Validation;
 using FastApi_NetCore.Core.Security;
-using FastApi_NetCore.Core.Utils;
 using FastApi_NetCore.Core.Services.Http;
+using FastApi_NetCore.Core.Utils;
+using FastApi_NetCore.Core.Validation;
+using FastApi_NetCore.Features.Authentication;
+using FastApi_NetCore.Features.Authentication.CredentialManagement;
+using FastApi_NetCore.Features.Authentication.TokenGeneration;
+using FastApi_NetCore.Features.Middleware;
+using FastApi_NetCore.Features.RateLimit;
 using FastApi_NetCore.Features.RequestProcessing;
+using FastApi_NetCore.Features.Routing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -22,8 +22,6 @@ using System.Reflection;
 using System.Text;
 using static FastApi_NetCore.Core.Services.Http.HttpService;
 using ConfigurationManager = FastApi_NetCore.Core.Configuration.ConfigurationManager;
-
-
 
 public class Program
 {

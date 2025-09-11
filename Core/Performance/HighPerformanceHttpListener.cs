@@ -91,7 +91,11 @@ namespace FastApi_NetCore.Core.Performance
                         OptimizeConnection(context);
                         
                         // Enqueue for processing
-                        if (!await _requestChannel.Writer.WriteAsync(context, _cancellationTokenSource.Token))
+                        try
+                        {
+                            await _requestChannel.Writer.WriteAsync(context, _cancellationTokenSource.Token);
+                        }
+                        catch (InvalidOperationException)
                         {
                             // Channel closed, close the response
                             context.Response.StatusCode = 503; // Service Unavailable
@@ -140,7 +144,8 @@ namespace FastApi_NetCore.Core.Performance
             // Set optimal buffer sizes
             if (request.ContentLength64 > 0 && request.ContentLength64 < _config.OptimalBufferSize)
             {
-                response.BufferOutput = true;
+                // BufferOutput is not available in .NET Core HttpListenerResponse
+                // This optimization is handled at a different level
             }
 
             // Register connection in pool for tracking

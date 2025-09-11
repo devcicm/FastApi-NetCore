@@ -1,12 +1,42 @@
- # 🚀 FastApi NetCore
+# FastApi NetCore Framework
 
-> **Framework ligero y extensible para construir APIs HTTP de alto rendimiento en .NET 8** con arquitectura de middlewares, jerarquía de autenticación avanzada, y pipeline de seguridad optimizado para producción.
+**FastApi NetCore** es un framework de aplicaciones web de alto rendimiento construido sobre .NET 8, diseñado para crear APIs HTTP rápidas, seguras y escalables con facilidad y flexibilidad.
 
 [![.NET 8](https://img.shields.io/badge/.NET-8.0-purple.svg)](https://dotnet.microsoft.com/)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Status](https://img.shields.io/badge/status-Production%20Ready-green.svg)](README.md)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE.txt)
+[![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](#)
+[![Version](https://img.shields.io/badge/version-1.0.0-orange.svg)](#)
 
----
+## 🌟 Características Principales
+
+### 🚀 Alto Rendimiento
+- **HttpListener optimizado** con pooling de conexiones y manejo asíncrono
+- **Sistema de logging particionado** para máximo throughput
+- **Memory-mapped data management** para operaciones de datos eficientes
+- **Pooling de objetos** para reducir la presión del garbage collector
+- **Rate limiting inteligente** por IP y por endpoint
+
+### 🔐 Seguridad Avanzada
+- **Autenticación JWT** con rotación automática de tokens
+- **Autorización basada en roles** con políticas jerárquicas
+- **Rate limiting por IP y endpoint** con protección anti-DDoS
+- **API Key management** con scopes y expiración
+- **Validación de IP** con rangos personalizables
+- **Middleware de seguridad** con detección de ataques
+
+### 📊 Observabilidad Completa
+- **Distributed tracing** con OpenTelemetry
+- **Health checks** avanzados con métricas detalladas
+- **Logging estructurado** con múltiples niveles
+- **Performance monitoring** en tiempo real
+- **Request tracing** completo con correlación de IDs
+
+### ⚙️ Arquitectura Modular
+- **Dependency injection** integrado
+- **Middleware pipeline** personalizable
+- **Handler-based routing** con atributos declarativos
+- **Configuration management** con hot-reloading
+- **Plugin architecture** para extensibilidad
 
 ## 📋 Índice
 
@@ -23,38 +53,38 @@
 
 ## 🎯 Descripción General
 
-**FastApi NetCore** es un framework empresarial para construir **APIs HTTP de alto rendimiento** en **.NET 8** con arquitectura de microservicios. Diseñado para aplicaciones críticas que requieren **seguridad avanzada**, **escalabilidad** y **observabilidad completa**.
+**FastApi NetCore** es un proyecto educativo para aprender y experimentar con **APIs HTTP en .NET 8** usando HttpListener. Incluye conceptos de middleware, autenticación básica, rate limiting y logging. Útil para entender cómo funcionan los frameworks web internamente.
 
-### 🔧 Características Principales
+### 🔧 Características Implementadas
 
-- 🛡️ **Jerarquía de Autenticación Multicapa**: JWT, API Keys, IP Validation con precedencia configurable
-- ⚡ **Alto Rendimiento**: Pipeline optimizado con middleware asíncrono y pooling de conexiones  
-- 🔍 **Observabilidad Completa**: Logging estructurado, métricas y tracing distribuido
-- 🚦 **Rate Limiting Inteligente**: Control de tráfico por endpoint, usuario e IP
-- 🌐 **Configuración Multi-Entorno**: Development, Staging, Production con hot-reload
-- 📊 **Validación en Tiempo de Compilación**: Roslyn Analyzers para políticas de seguridad
+- 🛡️ **Sistema de Autenticación**: JWT, API Keys, validación IP básica
+- ⚡ **Pipeline de Middleware**: Procesamiento asíncrono de requests
+- 🔍 **Logging Básico**: Registro de requests y eventos del sistema
+- 🚦 **Rate Limiting**: Control básico de requests por minuto
+- 🌐 **Configuración JSON**: appsettings.json con modo Development/Production
+- 📊 **Validación Experimental**: Roslyn Analyzers para políticas
 
 ---
 
-## ✨ Beneficios y Características Avanzadas
+## ✨ Propósito y Beneficios Educativos
 
-### 🏢 **Para Empresas**
-- **✅ Seguridad de Grado Empresarial**: Autenticación jerárquica, validación de políticas automática
-- **✅ Escalabilidad Horizontal**: Soporte para load balancing y clustering
-- **✅ Compliance y Auditoría**: Logging completo de eventos de seguridad y acceso
-- **✅ Zero-Downtime Deployment**: Hot-reload de configuración sin reinicio
+### 📚 **Para Aprendizaje**
+- **📖 Comprensión de Frameworks**: Implementación desde cero usando HttpListener
+- **🔧 Patrones de Diseño**: Middleware pattern, dependency injection básica
+- **🛡️ Conceptos de Seguridad**: JWT, rate limiting, validación de entrada
+- **⚡ Manejo de Concurrencia**: Operaciones asíncronas y thread-safety
 
-### 👨‍💻 **Para Desarrolladores**
-- **✅ Desarrollo Acelerado**: Auto-registro de rutas con atributos declarativos
-- **✅ Debugging Avanzado**: Modo development con bypass de autenticación configurable
-- **✅ Testing Integrado**: Endpoints de prueba y validación automática de políticas
-- **✅ IntelliSense Completo**: Validación en tiempo de diseño con Roslyn
+### 👨‍💻 **Para Experimentación**
+- **🎯 Configuración Flexible**: Modificar comportamiento vía JSON
+- **🔍 Debugging Educativo**: Modo development con bypass de autenticación
+- **📊 Métricas Básicas**: Logging de performance y eventos del sistema
+- **🧪 Testing de Conceptos**: Endpoints de prueba para validar funcionalidades
 
-### ⚡ **Para Operaciones**
-- **✅ Monitoreo en Tiempo Real**: Health checks, métricas de performance y alertas
-- **✅ Gestión de Recursos**: Throttling automático y garbage collection inteligente
-- **✅ Configuración Centralizada**: appsettings.json con override por variables de entorno
-- **✅ Deployment Simplificado**: Single binary con dependencias embebidas
+### ⚠️ **Limitaciones Actuales**
+- **🚧 Proyecto Experimental**: No optimizado para producción real
+- **📝 Documentación en Desarrollo**: Algunas características en estado beta
+- **🔒 Seguridad Básica**: Implementaciones educativas, no de grado empresarial
+- **⚡ Performance Limitado**: HttpListener no es tan eficiente como ASP.NET Core
 
 ---
 
@@ -884,9 +914,22 @@ El framework genera logs estructurados para cada request:
 
 ---
 
-## 🚀 **Despliegue y Producción**
+## 🧪 **Desarrollo y Testing Local**
 
-### 🐳 **Docker (Recomendado)**
+### 🚀 **Ejecución Local (Desarrollo)**
+```bash
+# Clona el repositorio
+git clone https://github.com/devcicm/FastApi-NetCore.git
+cd FastApi-NetCore
+
+# Ejecuta el proyecto
+dotnet build
+dotnet run
+
+# Servidor disponible en: http://localhost:8080
+```
+
+### 🐳 **Docker (Experimentación)**
 ```dockerfile
 FROM mcr.microsoft.com/dotnet/aspnet:8.0
 WORKDIR /app
@@ -895,35 +938,27 @@ EXPOSE 8080
 ENTRYPOINT ["dotnet", "FastApi NetCore.dll"]
 ```
 
-### 🌐 **Variables de Entorno para Producción**
+### ⚠️ **Nota Importante sobre Producción**
 
-El proyecto usa **únicamente** `appsettings.json` y permite override con variables de entorno:
+Este proyecto es **experimental y educativo**. Si necesitas una API para producción, considera usar:
+
+- **ASP.NET Core Web API**: Framework oficial optimizado para producción
+- **FastAPI (Python)**: Framework rápido y moderno
+- **Express.js (Node.js)**: Framework ligero y establecido
+- **Spring Boot (Java)**: Framework robusto y maduro
+
+### 🔧 **Variables de Entorno para Testing**
 
 ```bash
-# Configuración mínima para producción
-ServerConfig__IsProduction=true
-ServerConfig__HttpPrefix=http://0.0.0.0:8080/
-ServerConfig__JwtSecretKey=your-production-secret-key-here
+# Configuración básica para experimentación
+ServerConfig__IsProduction=false
+ServerConfig__HttpPrefix=http://localhost:8080/
+ServerConfig__EnableDetailedLogging=true
 
-# Configuración opcional de seguridad
-ServerConfig__EnableDetailedLogging=false
-ServerConfig__LogPolicyResolution=false
-ServerConfig__IpWhitelist__0=10.0.0.0/8
-ServerConfig__IpWhitelist__1=172.16.0.0/12
+# Configuración de desarrollo
+ServerConfig__DevelopmentAuthKeyword=mode_dev
+ServerConfig__EnableRequestTracing=true
 ```
-
-> **💡 Nota**: Ya no se usa `ASPNETCORE_ENVIRONMENT` para perfiles múltiples. El comportamiento se controla únicamente con `IsProduction`.
-
-### 📋 **Checklist de Producción**
-
-- [ ] ✅ `IsProduction: true` configurado
-- [ ] ✅ JWT Secret Key segura (mínimo 32 caracteres)
-- [ ] ✅ IP Whitelist configurada correctamente
-- [ ] ✅ API Keys rotadas y seguras
-- [ ] ✅ Rate Limits apropiados para carga esperada
-- [ ] ✅ Logging configurado para agregación externa
-- [ ] ✅ Health checks monitoreados
-- [ ] ✅ Métricas enviadas a sistema de observabilidad
 
 ---
 
