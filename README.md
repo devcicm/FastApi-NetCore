@@ -731,6 +731,203 @@ Accept: application/json
 }
 ```
 
+### 🔐 **Autenticación JWT Completa**
+
+#### **1. Obtener Token JWT (Login)**
+
+**cURL:**
+```bash
+curl -X POST http://localhost:8080/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "admin",
+    "password": "admin123"
+  }'
+```
+
+**Postman:**
+```http
+POST {{base_url}}/auth/login
+Content-Type: application/json
+
+{
+  "username": "admin",
+  "password": "admin123"
+}
+```
+
+**Respuesta exitosa (200):**
+```json
+{
+  "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "refreshToken": "rYiOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "tokenType": "Bearer",
+  "expiresIn": 3600,
+  "user": {
+    "userId": "admin",
+    "username": "admin",
+    "roles": ["Admin"],
+    "email": "admin@fastapi.com"
+  }
+}
+```
+
+#### **2. Usar Token JWT en Requests Protegidas**
+
+**cURL:**
+```bash
+# Usar el token obtenido en el paso anterior
+curl -X GET http://localhost:8080/admin/system/detailed-health \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -H "Accept: application/json"
+```
+
+**Postman:**
+```http
+GET {{base_url}}/admin/system/detailed-health
+Authorization: Bearer {{jwt_token}}
+Accept: application/json
+```
+
+#### **3. Refresh Token (Renovar Token)**
+
+**cURL:**
+```bash
+curl -X POST http://localhost:8080/auth/refresh \
+  -H "Content-Type: application/json" \
+  -d '{
+    "refreshToken": "rYiOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  }'
+```
+
+**Postman:**
+```http
+POST {{base_url}}/auth/refresh
+Content-Type: application/json
+
+{
+  "refreshToken": "{{refresh_token}}"
+}
+```
+
+#### **4. Logout (Invalidar Token)**
+
+**cURL:**
+```bash
+curl -X POST http://localhost:8080/auth/logout \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "refreshToken": "rYiOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  }'
+```
+
+**Postman:**
+```http
+POST {{base_url}}/auth/logout
+Authorization: Bearer {{jwt_token}}
+Content-Type: application/json
+
+{
+  "refreshToken": "{{refresh_token}}"
+}
+```
+
+#### **5. Generar API Key (Con JWT)**
+
+**cURL:**
+```bash
+curl -X POST http://localhost:8080/auth/api-keys \
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Mi API Key de Producción",
+    "roles": ["User", "Admin"],
+    "expirationDays": 365
+  }'
+```
+
+**Postman:**
+```http
+POST {{base_url}}/auth/api-keys
+Authorization: Bearer {{jwt_token}}
+Content-Type: application/json
+
+{
+  "name": "Mi API Key de Producción",
+  "roles": ["User", "Admin"],
+  "expirationDays": 365
+}
+```
+
+### 📋 **Colección Postman Completa**
+
+#### **Variables de Entorno:**
+```json
+{
+  "base_url": "http://localhost:8080",
+  "jwt_token": "",
+  "refresh_token": "",
+  "admin_username": "admin",
+  "admin_password": "admin123",
+  "user_username": "user",
+  "user_password": "user123"
+}
+```
+
+#### **Scripts de Pre-request (para login automático):**
+```javascript
+// En el request de login - Test tab
+if (responseCode.code === 200) {
+    var jsonData = JSON.parse(responseBody);
+    pm.environment.set("jwt_token", jsonData.accessToken);
+    pm.environment.set("refresh_token", jsonData.refreshToken);
+}
+```
+
+#### **Headers Automáticos:**
+```
+Authorization: Bearer {{jwt_token}}
+Content-Type: application/json
+Accept: application/json
+```
+
+### 🔍 **Usuarios de Prueba Disponibles**
+
+| Usuario | Contraseña | Roles | Descripción |
+|---------|------------|-------|-------------|
+| `admin` | `admin123` | `["Admin"]` | Usuario administrador completo |
+| `user` | `user123` | `["User"]` | Usuario estándar |
+
+### 🚨 **Manejo de Errores JWT**
+
+#### **Token Expirado (401):**
+```json
+{
+  "Error": "Unauthorized",
+  "Message": "Token has expired",
+  "Timestamp": "2025-09-11T22:30:00Z"
+}
+```
+
+#### **Token Inválido (401):**
+```json
+{
+  "Error": "Unauthorized", 
+  "Message": "Invalid token",
+  "Timestamp": "2025-09-11T22:30:00Z"
+}
+```
+
+#### **Roles Insuficientes (403):**
+```json
+{
+  "Error": "Forbidden",
+  "Message": "Insufficient permissions. Required roles: [Admin]",
+  "Timestamp": "2025-09-11T22:30:00Z"
+}
+```
+
 ## 🔬 Ejemplos de Endpoints
 
 > **⚠️ Importante sobre Access Modifiers**: Todas las clases de handlers y métodos de endpoints deben usar el modificador de acceso `internal` en lugar de `public`. Esto es parte de las convenciones de arquitectura del framework para mantener el encapsulamiento apropiado.
@@ -833,6 +1030,295 @@ internal async Task CriticalSystemOperation(HttpListenerContext context)
   "confirmation_code": "BACKUP_CONFIRMED_2025"
 }
 ```
+
+### 📋 **Ejemplos Prácticos Completos**
+
+#### **🔓 Endpoints Públicos (No Auth Requerida)**
+
+**Health Check:**
+```bash
+# cURL
+curl -X GET http://localhost:8080/health \
+  -H "Accept: application/json"
+
+# Postman
+GET {{base_url}}/health
+Accept: application/json
+```
+
+**Development Ping:**
+```bash
+# cURL
+curl -X GET http://localhost:8080/dev/ping \
+  -H "Accept: application/json"
+  
+# Postman  
+GET {{base_url}}/dev/ping
+Accept: application/json
+```
+
+**Información de IP (Demo):**
+```bash
+# cURL
+curl -X GET http://localhost:8080/security/demo/ip-info \
+  -H "Accept: application/json"
+
+# Postman
+GET {{base_url}}/security/demo/ip-info
+Accept: application/json
+```
+
+#### **🔒 Endpoints Protegidos con JWT**
+
+**Health Check Detallado (Admin):**
+```bash
+# cURL
+curl -X GET http://localhost:8080/admin/system/detailed-health \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN_HERE" \
+  -H "Accept: application/json"
+
+# Postman
+GET {{base_url}}/admin/system/detailed-health
+Authorization: Bearer {{jwt_token}}
+Accept: application/json
+```
+
+**Forzar Garbage Collection (Admin + POST):**
+```bash
+# cURL - Development Mode
+curl -X POST http://localhost:8080/admin/system/gc-collect \
+  -H "Content-Type: application/json" \
+  -d '{"mode_dev": true, "comment": "Force GC for testing"}'
+
+# cURL - Production Mode (JWT)
+curl -X POST http://localhost:8080/admin/system/gc-collect \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN_HERE" \
+  -H "Content-Type: application/json" \
+  -d '{}'
+
+# Postman - Development
+POST {{base_url}}/admin/system/gc-collect
+Content-Type: application/json
+
+{"mode_dev": true, "comment": "Force GC for testing"}
+
+# Postman - Production  
+POST {{base_url}}/admin/system/gc-collect
+Authorization: Bearer {{jwt_token}}
+Content-Type: application/json
+
+{}
+```
+
+**Variables de Entorno del Sistema (Admin):**
+```bash
+# cURL
+curl -X GET http://localhost:8080/admin/system/environment \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN_HERE" \
+  -H "Accept: application/json"
+
+# Postman
+GET {{base_url}}/admin/system/environment
+Authorization: Bearer {{jwt_token}}
+Accept: application/json
+```
+
+#### **🛡️ Endpoints con Restricciones IP + JWT**
+
+**Configuración del Sistema (Admin + IP Restringida):**
+```bash
+# cURL (solo desde IPs permitidas: 127.0.0.1, ::1, 192.168.1.0/24)
+curl -X GET http://localhost:8080/system/configuration \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN_HERE" \
+  -H "Accept: application/json"
+
+# Postman
+GET {{base_url}}/system/configuration
+Authorization: Bearer {{jwt_token}}
+Accept: application/json
+```
+
+**Métricas del Sistema:**
+```bash
+# cURL
+curl -X GET http://localhost:8080/system/metrics \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN_HERE" \
+  -H "Accept: application/json"
+
+# Postman
+GET {{base_url}}/system/metrics
+Authorization: Bearer {{jwt_token}}
+Accept: application/json
+```
+
+#### **🔧 Endpoints de Desarrollo/Testing**
+
+**Echo Request (Devuelve lo que envías):**
+```bash
+# cURL
+curl -X POST http://localhost:8080/dev/echo \
+  -H "Content-Type: application/json" \
+  -d '{"message": "Hello FastApi NetCore!", "timestamp": "2025-09-11T22:30:00Z"}'
+
+# Postman
+POST {{base_url}}/dev/echo
+Content-Type: application/json
+
+{
+  "message": "Hello FastApi NetCore!",
+  "timestamp": "2025-09-11T22:30:00Z",
+  "custom_data": {
+    "user": "developer",
+    "environment": "testing"
+  }
+}
+```
+
+**Headers Information:**
+```bash
+# cURL
+curl -X GET http://localhost:8080/dev/headers \
+  -H "Accept: application/json" \
+  -H "User-Agent: MiApp/1.0" \
+  -H "X-Custom-Header: TestValue"
+
+# Postman  
+GET {{base_url}}/dev/headers
+Accept: application/json
+User-Agent: MiApp/1.0
+X-Custom-Header: TestValue
+```
+
+**Respuesta Delayed (Testing Timeouts):**
+```bash
+# cURL - delay de 3 segundos
+curl -X GET http://localhost:8080/dev/delay/3 \
+  -H "Accept: application/json"
+
+# Postman
+GET {{base_url}}/dev/delay/{{delay_seconds}}
+Accept: application/json
+```
+
+**Status Code Personalizado:**
+```bash
+# cURL - retorna status 418 (I'm a teapot)
+curl -X GET http://localhost:8080/dev/status/418 \
+  -H "Accept: application/json"
+
+# Postman
+GET {{base_url}}/dev/status/{{status_code}}
+Accept: application/json
+```
+
+#### **⚡ Endpoints de Performance Testing**
+
+**Response Rápida:**
+```bash
+# cURL
+curl -X GET http://localhost:8080/dev/perf/fast \
+  -H "Accept: application/json"
+
+# Postman
+GET {{base_url}}/dev/perf/fast
+Accept: application/json
+```
+
+**Test de Concurrencia:**
+```bash
+# cURL
+curl -X GET http://localhost:8080/dev/perf/concurrent-test \
+  -H "Accept: application/json"
+
+# Postman
+GET {{base_url}}/dev/perf/concurrent-test
+Accept: application/json
+```
+
+**CPU Intensivo (Rate Limited: 20/5min):**
+```bash
+# cURL
+curl -X GET http://localhost:8080/dev/perf/cpu-intensive \
+  -H "Accept: application/json"
+
+# Postman
+GET {{base_url}}/dev/perf/cpu-intensive
+Accept: application/json
+```
+
+**Test de Memoria:**
+```bash
+# cURL
+curl -X GET http://localhost:8080/dev/perf/memory-test \
+  -H "Accept: application/json"
+
+# Postman
+GET {{base_url}}/dev/perf/memory-test
+Accept: application/json
+```
+
+**Respuesta Grande (Large Payload):**
+```bash
+# cURL
+curl -X GET http://localhost:8080/dev/perf/large-response \
+  -H "Accept: application/json"
+
+# Postman
+GET {{base_url}}/dev/perf/large-response
+Accept: application/json
+```
+
+### 📦 **JSON Body Schemas**
+
+#### **LoginRequest:**
+```json
+{
+  "username": "string",     // Required: Nombre de usuario
+  "password": "string"      // Required: Contraseña
+}
+```
+
+#### **RefreshTokenRequest:**
+```json
+{
+  "refreshToken": "string"  // Required: Refresh token válido
+}
+```
+
+#### **CreateApiKeyRequest:**
+```json
+{
+  "name": "string",         // Required: Nombre descriptivo de la API key
+  "roles": ["string"],      // Optional: Roles asignados ["User", "Admin"]
+  "expirationDays": 365     // Optional: Días hasta expiración (default: 365)
+}
+```
+
+#### **LogoutRequest:**
+```json
+{
+  "refreshToken": "string"  // Optional: Refresh token a invalidar
+}
+```
+
+#### **Development Mode Request:**
+```json
+{
+  "mode_dev": true,         // Required: Habilita bypass de autenticación
+  "comment": "string",      // Optional: Comentario para auditoría
+  "additional_data": {}     // Optional: Datos adicionales específicos del endpoint
+}
+```
+
+### 🔧 **Headers Requeridos por Tipo de Endpoint**
+
+| Tipo de Endpoint | Headers Obligatorios | Headers Opcionales |
+|------------------|---------------------|-------------------|
+| **Público** | `Accept: application/json` | `User-Agent`, `X-Request-ID` |
+| **JWT Protegido** | `Authorization: Bearer <token>`<br/>`Accept: application/json` | `User-Agent`, `X-Request-ID` |
+| **Con Body (POST)** | `Content-Type: application/json` | `Content-Length` |
+| **API Key** | `X-API-Key: <key>` | - |
+| **CORS** | `Origin: <domain>` | `Access-Control-Request-*` |
 
 ---
 
