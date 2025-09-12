@@ -37,6 +37,7 @@ namespace FastApi_NetCore.Core.Services.Http
             private readonly ResourceManager _resourceManager;
             private readonly StringBuilderPool _stringBuilderPool;
             private readonly MemoryStreamPool _memoryStreamPool;
+            private readonly FastApi_NetCore.Core.Diagnostics.HttpConnectionAnalyzer _httpAnalyzer;
             private CancellationTokenSource? _acceptLoopCts;
             private Task? _acceptLoop;
 
@@ -58,6 +59,8 @@ namespace FastApi_NetCore.Core.Services.Http
                 _rateLimitService = rateLimitService;
                 _requestProcessor = requestProcessor;
                 
+                _logger.LogInformation("[HTTP-CONSTRUCTOR] Starting HttpTunnelService constructor...");
+                
                 // Inicializar gestores de recursos
                 _resourceManager = new ResourceManager(
                     logInfo: msg => _logger.LogInformation(msg),
@@ -65,12 +68,17 @@ namespace FastApi_NetCore.Core.Services.Http
                     logDebug: msg => _logger.LogDebug(msg));
                 _stringBuilderPool = new StringBuilderPool(maxSize: 50, _logger);
                 _memoryStreamPool = new MemoryStreamPool(maxSize: 20, _logger);
+                _httpAnalyzer = new FastApi_NetCore.Core.Diagnostics.HttpConnectionAnalyzer(_logger);
                 
                 // Registrar el HttpListener como recurso gestionado
                 _resourceManager.RegisterResource("HttpListener", _listener, ResourceLifetime.Application);
 
+                _logger.LogInformation("[HTTP-CONSTRUCTOR] Resource managers initialized, setting up HttpListener...");
+                
                 var config = serverConfig.Value;
                 _listener.Prefixes.Add(config.HttpPrefix);
+                
+                _logger.LogInformation($"[HTTP-CONSTRUCTOR] HttpListener prefix added: {config.HttpPrefix}");
                 
                 // Configurar HttpListener para alta concurrencia
                 _listener.IgnoreWriteExceptions = true;
@@ -90,10 +98,13 @@ namespace FastApi_NetCore.Core.Services.Http
                     }
                 }
 
+                _logger.LogInformation("[HTTP-CONSTRUCTOR] HttpListener configured, initializing middleware pipeline...");
+                
                 _middlewarePipeline = new MiddlewarePipeline();
 
                 // Configurar middlewares en orden optimizado para alta concurrencia
                 // SEGURIDAD CRÍTICA - Primero: Protecciones básicas de input y reconnaissance
+                _logger.LogInformation("[HTTP-CONSTRUCTOR] Adding security middlewares...");
                 _middlewarePipeline.Use(new InputValidationMiddleware());
                 _middlewarePipeline.Use(new ReconnaissanceDetectionMiddleware());
                 _middlewarePipeline.Use(new ResourceProtectionMiddleware());
@@ -108,7 +119,15 @@ namespace FastApi_NetCore.Core.Services.Http
                 _middlewarePipeline.Use(new ConcurrencyThrottleMiddleware(serverConfig, logger));
                 
                 // CORS Validation - debe estar temprano en el pipeline
-                _middlewarePipeline.Use(serviceProvider.GetService<CorsValidationMiddleware>());
+                var corsMiddleware = serviceProvider.GetService<CorsValidationMiddleware>();
+                if (corsMiddleware != null)
+                {
+                    _middlewarePipeline.Use(corsMiddleware);
+                }
+                else
+                {
+                    _logger.LogWarning("[HTTP] CorsValidationMiddleware not available, skipping CORS validation");
+                }
                 
                 if (config.EnableCaching)
                 {
@@ -149,11 +168,15 @@ namespace FastApi_NetCore.Core.Services.Http
                 _middlewarePipeline.Use(new TimingAttackPreventionMiddleware());
 
                 _middlewarePipeline.Use(new ServiceProviderMiddleware(serviceProvider));
+                
+                _logger.LogInformation("[HTTP-CONSTRUCTOR] HttpTunnelService constructor completed successfully!");
             }
 
             public Task StartAsync(CancellationToken token)
             {
+                _logger.LogInformation("[HTTP-STARTASYNC] Starting HttpTunnelService.StartAsync()...");
                 _listener.Start();
+                _logger.LogInformation("[HTTP-STARTASYNC] HttpListener started successfully!");
                 _acceptLoopCts = CancellationTokenSource.CreateLinkedTokenSource(token);
                 var ct = _acceptLoopCts.Token;
 
@@ -178,19 +201,33 @@ namespace FastApi_NetCore.Core.Services.Http
                         try
                         {
                             ctx = await _listener.GetContextAsync().ConfigureAwait(false);
+                            
+                            // ANÁLISIS HTTP PROFUNDO - REQUEST INICIAL
+                            await _httpAnalyzer.AnalyzeHttpContextAsync(ctx, "REQUEST_RECEIVED");
 
-                            // Encolar la solicitud en el procesador particionado para alta concurrencia
-                            var enqueued = await _requestProcessor.EnqueueRequestAsync(ctx, async (context) =>
+                            // PROCESAMIENTO DIRECTO TEMPORALMENTE (para diagnóstico)
+                            // Bypassing PartitionedRequestProcessor que se está colgando
+                            _logger.LogInformation("[HTTP] Processing request directly (diagnostic mode)");
+                            
+                            _ = Task.Run(async () =>
                             {
                                 try
                                 {
+                                    var contextId = $"{ctx.Request.RemoteEndPoint}_{DateTime.Now.Ticks}";
+                                    
+                                    // ANÁLISIS HTTP PROFUNDO - ANTES DEL PIPELINE
+                                    await _httpAnalyzer.AnalyzeHttpContextAsync(ctx, "BEFORE_MIDDLEWARE");
+                                    
                                     // Ejecutar el pipeline de middlewares
-                                    await _middlewarePipeline.ExecuteAsync(context);
+                                    await _middlewarePipeline.ExecuteAsync(ctx);
+                                    
+                                    // ANÁLISIS HTTP PROFUNDO - DESPUÉS DEL PIPELINE
+                                    await _httpAnalyzer.AnalyzeHttpContextAsync(ctx, "AFTER_MIDDLEWARE");
 
                                     // Verificar si la respuesta sigue siendo válida antes de procesar
                                     try
                                     {
-                                        if (!context.Response.OutputStream.CanWrite)
+                                        if (!ctx.Response.OutputStream.CanWrite)
                                         {
                                             _logger.LogInformation("[HTTP] Request processing info:\n" +
                                                 "        Status: Response stream closed by middleware\n" +
@@ -205,14 +242,23 @@ namespace FastApi_NetCore.Core.Services.Http
                                         return;
                                     }
 
-                                    bool handled = await _router.TryHandleAsync(context.Request.Url!.AbsolutePath, context);
+                                    // ANÁLISIS HTTP PROFUNDO - ANTES DEL ROUTER
+                                    await _httpAnalyzer.AnalyzeHttpContextAsync(ctx, "BEFORE_ROUTER");
+                                    
+                                    bool handled = await _router.TryHandleAsync(ctx.Request.Url!.AbsolutePath, ctx);
+                                    
+                                    // ANÁLISIS HTTP PROFUNDO - DESPUÉS DEL ROUTER
+                                    await _httpAnalyzer.AnalyzeHttpContextAsync(ctx, "AFTER_ROUTER");
+                                    
                                     if (!handled)
                                     {
                                         try
                                         {
-                                            if (context.Response.OutputStream.CanWrite)
+                                            if (ctx.Response.OutputStream.CanWrite)
                                             {
-                                                await ErrorHandler.SendErrorResponse(context, HttpStatusCode.NotFound, "Endpoint not found");
+                                                await _httpAnalyzer.LogFlushAttemptAsync(ctx.Response, "404_ERROR", contextId);
+                                                await ErrorHandler.SendErrorResponse(ctx, HttpStatusCode.NotFound, "Endpoint not found");
+                                                await _httpAnalyzer.LogFlushAttemptAsync(ctx.Response, "404_SENT", contextId);
                                             }
                                         }
                                         catch (ObjectDisposedException)
@@ -220,42 +266,32 @@ namespace FastApi_NetCore.Core.Services.Http
                                             // Response already disposed, ignore
                                         }
                                     }
+                                    
+                                    // ANÁLISIS HTTP PROFUNDO - ANTES DE CERRAR RESPUESTA
+                                    await _httpAnalyzer.LogResponseCloseAsync(ctx.Response, contextId);
                                 }
                                 catch (Exception ex)
                                 {
-                                    _logger.LogError($"[HTTP] Request processing error: {ex}");
+                                    _logger.LogError($"[HTTP] Direct processing error: {ex}");
                                     try
                                     {
-                                        await ErrorHandler.SendErrorResponse(context, HttpStatusCode.InternalServerError, "Internal server error");
+                                        await ErrorHandler.SendErrorResponse(ctx, HttpStatusCode.InternalServerError, "Internal server error");
                                     }
                                     catch
                                     {
                                         // Ignore secondary errors
                                     }
                                 }
-                            });
-
-                            // Si no se pudo encolar, procesar de forma síncrona como fallback
-                            if (!enqueued)
-                            {
-                                _logger.LogWarning("[HTTP] Request queue full, processing synchronously");
-                                _ = Task.Run(async () =>
+                                finally
                                 {
-                                    try
-                                    {
-                                        await _middlewarePipeline.ExecuteAsync(ctx);
-                                        await _router.TryHandleAsync(ctx.Request.Url!.AbsolutePath, ctx);
+                                    try { 
+                                        _logger.LogInformation("[HTTP] Closing HTTP context");
+                                        ctx.Response.Close(); 
+                                    } catch (Exception ex) {
+                                        _logger.LogWarning($"[HTTP] Error closing context: {ex.Message}");
                                     }
-                                    catch (Exception ex)
-                                    {
-                                        _logger.LogError($"[HTTP] Fallback processing error: {ex}");
-                                    }
-                                    finally
-                                    {
-                                        try { ctx.Response.Close(); } catch { }
-                                    }
-                                });
-                            }
+                                }
+                            });
                         }
                         catch (HttpListenerException ex) when (ex.ErrorCode == 995)
                         {

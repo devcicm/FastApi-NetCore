@@ -20,6 +20,7 @@ namespace FastApi_NetCore.Features.Middleware
         public void Use(IMiddleware middleware) 
         {
             if (_disposed) throw new ObjectDisposedException(nameof(MiddlewarePipeline));
+            if (middleware == null) throw new ArgumentNullException(nameof(middleware));
             _middlewares.Add(middleware);
         }
 

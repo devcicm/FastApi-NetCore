@@ -51,6 +51,8 @@ public class Program
 
                 // Configurar servicios de credenciales
                 services.Configure<CredentialConfig>(ctx.Configuration.GetSection("CredentialConfig"));
+                services.Configure<ApiKeyConfig>(ctx.Configuration.GetSection("ApiKeyConfig"));
+                services.Configure<RateLimitConfig>(ctx.Configuration.GetSection("RateLimitConfig"));
 
                 // Servicios base
                 services.AddSingleton<IHttpResponseHandler, ResponseSerializer>();
@@ -125,7 +127,7 @@ public class Program
                 services.AddRouteHandlers();
 
                 // Registrar el servicio principal
-                services.AddSingleton<IHostedService, HttpService.HttpTunnelService>();
+                services.AddHostedService<HttpService.HttpTunnelService>();
 
              
             })
@@ -135,6 +137,20 @@ public class Program
         // Configurar lifecycle management
         var lifecycleManager = host.Services.GetRequiredService<ApplicationLifecycleManager>();
         var logger = host.Services.GetRequiredService<ILoggerService>();
+
+        // ===== ANÁLISIS PROFUNDO DE DEPENDENCIAS =====
+        logger.LogInformation("[MAIN] Iniciando análisis profundo de dependencias con reflexión...");
+        
+        var deepAnalyzer = new FastApi_NetCore.Core.Diagnostics.DeepDependencyAnalyzer(host.Services, logger);
+        var analysisReport = await deepAnalyzer.AnalyzeAllDependenciesAsync();
+        
+        logger.LogInformation($"[MAIN] REPORTE COMPLETO DE DEPENDENCIAS:\n{analysisReport}");
+        
+        // Crear analizador HTTP para diagnóstico de conexiones
+        var httpAnalyzer = new FastApi_NetCore.Core.Diagnostics.HttpConnectionAnalyzer(logger);
+        logger.LogInformation("[MAIN] Analizador HTTP creado para diagnóstico de conexiones");
+        
+        logger.LogInformation("[MAIN] ===== ANÁLISIS DE DEPENDENCIAS COMPLETADO =====");
         
         // Registrar servicios principales para limpieza
         lifecycleManager.RegisterDisposable(host.Services.GetRequiredService<ResourceManager>());
