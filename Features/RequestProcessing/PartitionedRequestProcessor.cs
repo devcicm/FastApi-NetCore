@@ -1,5 +1,6 @@
 using FastApi_NetCore.Core.Utils;
 using System;
+using System.Linq;
 using System.Net;
 using System.Threading;
 using System.Threading.Tasks;
@@ -7,6 +8,10 @@ using System.Threading.Tasks;
 namespace FastApi_NetCore.Features.RequestProcessing
 {
     /// <summary>
+    /// [DEPRECATION WARNING] This processor is a simpler version. For better performance and stability,
+    /// consider using the 'LoadBalancedPartitionedRequestProcessor' which provides superior load balancing
+    /// and worker isolation.
+    /// --- 
     /// Partitioned request processor for high-throughput HTTP request handling
     /// </summary>
     public class PartitionedRequestProcessor : IDisposable
@@ -271,18 +276,13 @@ namespace FastApi_NetCore.Features.RequestProcessing
             _channelManager?.Dispose();
         }
 
-        private class HttpRequestTask
-        {
-            public HttpListenerContext Context { get; set; } = null!;
-            public Func<HttpListenerContext, Task> Handler { get; set; } = null!;
-            public DateTime EnqueuedAt { get; set; }
-            public string RequestId { get; set; } = "";
-        }
+        
     }
 
     public class RequestProcessorConfiguration
     {
         public int BasePartitions { get; set; } = 3;
+        public int MaxQueueDepthPerPartition { get; set; } = 1000; // Default queue depth
         public bool EnableProcessingLogs { get; set; } = false;
         public bool EnableDetailedMetrics { get; set; } = true;
         public TimeSpan RequestTimeout { get; set; } = TimeSpan.FromSeconds(30);

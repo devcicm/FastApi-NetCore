@@ -292,23 +292,40 @@ namespace FastApi_NetCore.Core.Utils
             if (_disposed) return;
             _disposed = true;
 
+            // First, signal all processor tasks to stop.
             try
             {
-                // Complete all channels
-                foreach (var group in _channelGroups)
-                {
-                    foreach (var channel in group.Partitions)
-                    {
-                        channel.Writer.Complete();
-                    }
-                }
+                _cancellationTokenSource.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // Source might already be disposed, which is fine.
+            }
 
-                // Wait for processors to finish
+            // Then, complete the writers. This will cause ReadAllAsync to finish gracefully.
+            foreach (var group in _channelGroups)
+            {
+                foreach (var channel in group.Partitions)
+                {
+                    channel.Writer.TryComplete();
+                }
+            }
+
+            try
+            {
+                // Wait for all tasks to complete, but with a timeout and AFTER cancellation has been signaled.
+                // This is much safer and avoids the common deadlock scenario.
                 Task.WhenAll(_processorTasks).Wait(TimeSpan.FromSeconds(5));
             }
-            catch (TimeoutException)
+            catch (AggregateException ex) when (ex.InnerExceptions.All(e => e is TaskCanceledException || e is OperationCanceledException))
             {
-                _cancellationTokenSource.Cancel();
+                // This is an expected and normal outcome when tasks are cancelled during shutdown.
+                Console.WriteLine("All channel processors cancelled successfully.");
+            }
+            catch (Exception ex)
+            {
+                // Log other potential errors during shutdown.
+                Console.WriteLine($"An error occurred during channel manager disposal: {ex.Message}");
             }
             finally
             {

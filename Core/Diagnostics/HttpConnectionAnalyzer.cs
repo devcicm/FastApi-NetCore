@@ -91,37 +91,28 @@ namespace FastApi_NetCore.Core.Diagnostics
 
         private async Task AnalyzeResponseAsync(HttpListenerResponse response, string contextId, string stage)
         {
-            _logger.LogInformation($"[HTTP-ANALYZER] 📤 RESPONSE ANALYSIS - Context: {contextId} - Stage: {stage}");
-            
             try
             {
+                // Primero, verificar de forma segura si la respuesta sigue abierta.
+                // Esta es la forma más robusta de evitar la condición de carrera.
+                if (!response.OutputStream.CanWrite)
+                {
+                    _logger.LogInformation($"[HTTP-ANALYZER] ✅ Análisis de respuesta en etapa '{stage}' omitido (la respuesta ya fue enviada al cliente).");
+                    return; // Salir de forma limpia.
+                }
+
+                // Si llegamos aquí, la respuesta está abierta y podemos analizarla.
+                _logger.LogInformation($"[HTTP-ANALYZER] 📤 RESPONSE ANALYSIS - Context: {contextId} - Stage: {stage}");
+                
                 _logger.LogInformation($"[HTTP-ANALYZER]   Status-Code: {response.StatusCode}");
                 _logger.LogInformation($"[HTTP-ANALYZER]   Status-Description: {response.StatusDescription ?? "null"}");
                 _logger.LogInformation($"[HTTP-ANALYZER]   Content-Length: {response.ContentLength64}");
                 _logger.LogInformation($"[HTTP-ANALYZER]   Content-Type: {response.ContentType ?? "null"}");
                 _logger.LogInformation($"[HTTP-ANALYZER]   Keep-Alive: {response.KeepAlive}");
                 
-                // Verificar estado crítico del OutputStream
                 var outputStreamAnalysis = AnalyzeStreamWithReflection(response.OutputStream, "Response.OutputStream");
                 _logger.LogInformation($"[HTTP-ANALYZER]   OutputStream: {outputStreamAnalysis}");
                 
-                // Verificar si se puede escribir
-                bool canWrite = false;
-                try
-                {
-                    canWrite = response.OutputStream.CanWrite;
-                    _logger.LogInformation($"[HTTP-ANALYZER]   OutputStream.CanWrite: {canWrite}");
-                }
-                catch (ObjectDisposedException)
-                {
-                    _logger.LogWarning($"[HTTP-ANALYZER]   OutputStream.CanWrite: DISPOSED");
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError($"[HTTP-ANALYZER]   OutputStream.CanWrite: ERROR - {ex.Message}");
-                }
-
-                // Analizar headers de response
                 _logger.LogInformation($"[HTTP-ANALYZER]   Response Headers Count: {response.Headers.Count}");
                 foreach (string key in response.Headers.AllKeys ?? new string[0])
                 {
@@ -132,25 +123,16 @@ namespace FastApi_NetCore.Core.Diagnostics
                     }
                 }
 
-                // Verificar si se ha enviado la response
-                try
-                {
-                    var responseType = response.GetType();
-                    var sentField = responseType.GetField("_responseState", BindingFlags.NonPublic | BindingFlags.Instance);
-                    if (sentField != null)
-                    {
-                        var state = sentField.GetValue(response);
-                        _logger.LogInformation($"[HTTP-ANALYZER]   Response State (interno): {state}");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogDebug($"[HTTP-ANALYZER]   No se pudo obtener estado interno: {ex.Message}");
-                }
+                _logger.LogInformation($"[HTTP-ANALYZER] ✅ Análisis de respuesta en etapa '{stage}' completado exitosamente.");
+            }
+            catch (ObjectDisposedException)
+            {
+                // Fallback por si el objeto se cierra justo entre la comprobación de CanWrite y el análisis.
+                _logger.LogInformation($"[HTTP-ANALYZER] ✅ Análisis de respuesta en etapa '{stage}' omitido (la respuesta se cerró durante el análisis).");
             }
             catch (Exception ex)
             {
-                _logger.LogError($"[HTTP-ANALYZER] Error analizando response: {ex}");
+                _logger.LogError($"[HTTP-ANALYZER] Error fatal analizando response: {ex}");
             }
         }
 

@@ -93,16 +93,19 @@ public class Program
                 services.AddSingleton<StringBuilderPool>();
                 services.AddSingleton<MemoryStreamPool>();
 
-                // Configurar el procesador de requests particionado
+                // Configurar el procesador de requests con balanceo de carga (versión mejorada)
                 services.AddSingleton(provider =>
                 {
-                    return new PartitionedRequestProcessor(new RequestProcessorConfiguration
+                    var logger = provider.GetRequiredService<ILoggerService>();
+                    var config = new RequestProcessorConfiguration
                     {
-                        BasePartitions = 4,              // 4 partitions base por prioridad
+                        BasePartitions = 4, // 4 partitions base por prioridad
+                        MaxQueueDepthPerPartition = 1000,
                         EnableProcessingLogs = !serverConfig.IsProduction, // Solo en desarrollo
                         EnableDetailedMetrics = true,
                         RequestTimeout = TimeSpan.FromSeconds(30)
-                    });
+                    };
+                    return new LoadBalancedPartitionedRequestProcessor(logger, config);
                 });
 
                 // Registrar otros servicios
@@ -156,7 +159,7 @@ public class Program
         lifecycleManager.RegisterDisposable(host.Services.GetRequiredService<ResourceManager>());
         lifecycleManager.RegisterDisposable(host.Services.GetRequiredService<StringBuilderPool>());
         lifecycleManager.RegisterDisposable(host.Services.GetRequiredService<MemoryStreamPool>());
-        lifecycleManager.RegisterDisposable(host.Services.GetRequiredService<PartitionedRequestProcessor>());
+        lifecycleManager.RegisterDisposable(host.Services.GetRequiredService<LoadBalancedPartitionedRequestProcessor>());
         lifecycleManager.RegisterDisposable(logger);
         
         // Registrar el host mismo

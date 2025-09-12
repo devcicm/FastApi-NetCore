@@ -33,7 +33,7 @@ namespace FastApi_NetCore.Core.Services.Http
             private readonly ILoggerService _logger;
             private readonly IApiKeyService _apiKeyService;
             private readonly IRateLimitService _rateLimitService;
-            private readonly PartitionedRequestProcessor _requestProcessor;
+            private readonly LoadBalancedPartitionedRequestProcessor _requestProcessor;
             private readonly ResourceManager _resourceManager;
             private readonly StringBuilderPool _stringBuilderPool;
             private readonly MemoryStreamPool _memoryStreamPool;
@@ -50,7 +50,7 @@ namespace FastApi_NetCore.Core.Services.Http
                     ILoggerService logger,
                     IApiKeyService apiKeyService,
                     IRateLimitService rateLimitService,
-                    PartitionedRequestProcessor requestProcessor)
+                    LoadBalancedPartitionedRequestProcessor requestProcessor)
             {
                 _router = router;
                 _serverConfig = serverConfig;
