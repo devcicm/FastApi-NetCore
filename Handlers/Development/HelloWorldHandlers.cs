@@ -1,7 +1,9 @@
 using FastApi_NetCore.Core.Attributes;
 using FastApi_NetCore.Core.Extensions;
 using System;
+using System.IO;
 using System.Net;
+using System.Text.Json;
 using System.Threading.Tasks;
 
 namespace FastApi_NetCore.Handlers.Development
@@ -100,13 +102,13 @@ namespace FastApi_NetCore.Handlers.Development
             {
                 try
                 {
-                    using var reader = new System.IO.StreamReader(context.Request.InputStream, context.Request.ContentEncoding);
+                    using var reader = new StreamReader(context.Request.InputStream, context.Request.ContentEncoding);
                     var requestBody = await reader.ReadToEndAsync();
                     
                     if (!string.IsNullOrWhiteSpace(requestBody))
                     {
                         // Try to parse JSON
-                        var jsonDoc = System.Text.Json.JsonDocument.Parse(requestBody);
+                        var jsonDoc = JsonDocument.Parse(requestBody);
                         if (jsonDoc.RootElement.TryGetProperty("name", out var nameElement))
                         {
                             name = nameElement.GetString() ?? "Amigo";
