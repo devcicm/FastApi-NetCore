@@ -205,34 +205,30 @@ namespace FastApi_NetCore.Core.Services.Http
                             // ANÁLISIS HTTP PROFUNDO - REQUEST INICIAL
                             await _httpAnalyzer.AnalyzeHttpContextAsync(ctx, "REQUEST_RECEIVED");
 
-                            // PROCESAMIENTO DIRECTO TEMPORALMENTE (para diagnóstico)
-                            // Bypassing PartitionedRequestProcessor que se está colgando
-                            _logger.LogInformation("[HTTP] Processing request directly (diagnostic mode)");
-                            
-                            _ = Task.Run(async () =>
+                            // PROCESAMIENTO CON LOAD BALANCED PARTITIONED REQUEST PROCESSOR
+                            _logger.LogDebug("[HTTP] Enqueueing request to partitioned processor");
+
+                            bool enqueued = await _requestProcessor.EnqueueRequestAsync(ctx, async context =>
                             {
                                 try
                                 {
-                                    var contextId = $"{ctx.Request.RemoteEndPoint}_{DateTime.Now.Ticks}";
-                                    
+                                    var contextId = $"{context.Request.RemoteEndPoint}_{DateTime.Now.Ticks}";
+
                                     // ANÁLISIS HTTP PROFUNDO - ANTES DEL PIPELINE
-                                    await _httpAnalyzer.AnalyzeHttpContextAsync(ctx, "BEFORE_MIDDLEWARE");
-                                    
+                                    await _httpAnalyzer.AnalyzeHttpContextAsync(context, "BEFORE_MIDDLEWARE");
+
                                     // Ejecutar el pipeline de middlewares
-                                    await _middlewarePipeline.ExecuteAsync(ctx);
-                                    
+                                    await _middlewarePipeline.ExecuteAsync(context);
+
                                     // ANÁLISIS HTTP PROFUNDO - DESPUÉS DEL PIPELINE
-                                    await _httpAnalyzer.AnalyzeHttpContextAsync(ctx, "AFTER_MIDDLEWARE");
+                                    await _httpAnalyzer.AnalyzeHttpContextAsync(context, "AFTER_MIDDLEWARE");
 
                                     // Verificar si la respuesta sigue siendo válida antes de procesar
                                     try
                                     {
-                                        if (!ctx.Response.OutputStream.CanWrite)
+                                        if (!context.Response.OutputStream.CanWrite)
                                         {
-                                            _logger.LogInformation("[HTTP] Request processing info:\n" +
-                                                "        Status: Response stream closed by middleware\n" +
-                                                "        Action: Skipping router processing\n" +
-                                                "        Reason: Middleware already handled the response");
+                                            _logger.LogDebug("[HTTP] Response stream closed by middleware, skipping router");
                                             return;
                                         }
                                     }
@@ -243,22 +239,22 @@ namespace FastApi_NetCore.Core.Services.Http
                                     }
 
                                     // ANÁLISIS HTTP PROFUNDO - ANTES DEL ROUTER
-                                    await _httpAnalyzer.AnalyzeHttpContextAsync(ctx, "BEFORE_ROUTER");
-                                    
-                                    bool handled = await _router.TryHandleAsync(ctx.Request.Url!.AbsolutePath, ctx);
-                                    
+                                    await _httpAnalyzer.AnalyzeHttpContextAsync(context, "BEFORE_ROUTER");
+
+                                    bool handled = await _router.TryHandleAsync(context.Request.Url!.AbsolutePath, context);
+
                                     // ANÁLISIS HTTP PROFUNDO - DESPUÉS DEL ROUTER
-                                    await _httpAnalyzer.AnalyzeHttpContextAsync(ctx, "AFTER_ROUTER");
-                                    
+                                    await _httpAnalyzer.AnalyzeHttpContextAsync(context, "AFTER_ROUTER");
+
                                     if (!handled)
                                     {
                                         try
                                         {
-                                            if (ctx.Response.OutputStream.CanWrite)
+                                            if (context.Response.OutputStream.CanWrite)
                                             {
-                                                await _httpAnalyzer.LogFlushAttemptAsync(ctx.Response, "404_ERROR", contextId);
-                                                await ErrorHandler.SendErrorResponse(ctx, HttpStatusCode.NotFound, "Endpoint not found");
-                                                await _httpAnalyzer.LogFlushAttemptAsync(ctx.Response, "404_SENT", contextId);
+                                                await _httpAnalyzer.LogFlushAttemptAsync(context.Response, "404_ERROR", contextId);
+                                                await ErrorHandler.SendErrorResponse(context, HttpStatusCode.NotFound, "Endpoint not found");
+                                                await _httpAnalyzer.LogFlushAttemptAsync(context.Response, "404_SENT", contextId);
                                             }
                                         }
                                         catch (ObjectDisposedException)
@@ -266,32 +262,40 @@ namespace FastApi_NetCore.Core.Services.Http
                                             // Response already disposed, ignore
                                         }
                                     }
-                                    
+
                                     // ANÁLISIS HTTP PROFUNDO - ANTES DE CERRAR RESPUESTA
-                                    await _httpAnalyzer.LogResponseCloseAsync(ctx.Response, contextId);
+                                    await _httpAnalyzer.LogResponseCloseAsync(context.Response, contextId);
                                 }
                                 catch (Exception ex)
                                 {
-                                    _logger.LogError($"[HTTP] Direct processing error: {ex}");
+                                    _logger.LogError($"[HTTP] Request processing error: {ex}");
                                     try
                                     {
-                                        await ErrorHandler.SendErrorResponse(ctx, HttpStatusCode.InternalServerError, "Internal server error");
+                                        if (context.Response.OutputStream.CanWrite)
+                                        {
+                                            await ErrorHandler.SendErrorResponse(context, HttpStatusCode.InternalServerError, "Internal server error");
+                                        }
                                     }
                                     catch
                                     {
                                         // Ignore secondary errors
                                     }
                                 }
-                                finally
-                                {
-                                    try { 
-                                        _logger.LogInformation("[HTTP] Closing HTTP context");
-                                        ctx.Response.Close(); 
-                                    } catch (Exception ex) {
-                                        _logger.LogWarning($"[HTTP] Error closing context: {ex.Message}");
-                                    }
-                                }
                             });
+
+                            if (!enqueued)
+                            {
+                                _logger.LogWarning("[HTTP] Request processor queue full, sending 503");
+                                try
+                                {
+                                    await ErrorHandler.SendErrorResponse(ctx, HttpStatusCode.ServiceUnavailable, "Server overloaded, please try again");
+                                    ctx.Response.Close();
+                                }
+                                catch (Exception ex)
+                                {
+                                    _logger.LogError($"[HTTP] Error sending 503 response: {ex}");
+                                }
+                            }
                         }
                         catch (HttpListenerException ex) when (ex.ErrorCode == 995)
                         {

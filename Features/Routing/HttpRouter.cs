@@ -20,6 +20,7 @@ namespace FastApi_NetCore.Features.Routing
     public class HttpRouter : IHttpRouter
     {
         private readonly ConcurrentDictionary<(HttpMethodType, string), (Func<HttpListenerContext, Task> Handler, AuthorizeAttribute AuthorizeAttr, IpRangeAttribute IpRangeAttr)> _routes = new();
+        private readonly ConcurrentDictionary<(HttpMethodType, string), (Func<HttpListenerContext, Task> Handler, AuthorizeAttribute AuthorizeAttr, IpRangeAttribute IpRangeAttr, string Pattern)> _parameterRoutes = new();
         private readonly IOptions<ServerConfig> _serverConfig;
         private readonly ILoggerService _logger;
 
@@ -54,9 +55,26 @@ namespace FastApi_NetCore.Features.Routing
         private void RegisterRoute(HttpMethodType method, string path, Func<HttpListenerContext, Task> handler, 
             AuthorizeAttribute authorizeAttr, IpRangeAttribute ipRangeAttr, RateLimitAttribute rateLimitAttr)
         {
-            var key = (method, Normalize(path));
-            if (!_routes.TryAdd(key, (handler, authorizeAttr, ipRangeAttr)))
-                throw new InvalidOperationException($"Ruta duplicada: {method} {path}");
+            var normalizedPath = Normalize(path);
+            var key = (method, normalizedPath);
+            
+            // Detectar si la ruta tiene parámetros
+            if (path.Contains('{') && path.Contains('}'))
+            {
+                // Ruta con parámetros - almacenar en diccionario separado
+                if (!_parameterRoutes.TryAdd(key, (handler, authorizeAttr, ipRangeAttr, path)))
+                    throw new InvalidOperationException($"Ruta duplicada: {method} {path}");
+                
+                _logger.LogDebug($"[ROUTER] Registered parameterized route: {method} {path}");
+            }
+            else
+            {
+                // Ruta estática - comportamiento original
+                if (!_routes.TryAdd(key, (handler, authorizeAttr, ipRangeAttr)))
+                    throw new InvalidOperationException($"Ruta duplicada: {method} {path}");
+                
+                _logger.LogDebug($"[ROUTER] Registered static route: {method} {path}");
+            }
         }
 
         public async Task<bool> TryHandleAsync(string path, HttpListenerContext context)
@@ -90,30 +108,26 @@ namespace FastApi_NetCore.Features.Routing
 
                 string norm = Normalize(path);
 
+                // 1. Buscar primero en rutas estáticas (comportamiento original)
                 if (_routes.TryGetValue((method, norm), out var routeInfo))
                 {
-                    // Establecer los atributos en el contexto
-                    if (routeInfo.AuthorizeAttr != null)
-                    {
-                        context.SetFeature(routeInfo.AuthorizeAttr);
-                    }
+                    await ExecuteRoute(context, routeInfo.Handler, routeInfo.AuthorizeAttr, routeInfo.IpRangeAttr, null);
+                    return true;
+                }
 
-                    if (routeInfo.IpRangeAttr != null)
+                // 2. Buscar en rutas con parámetros
+                var matchedParameterRoute = FindParameterizedRoute(method, norm);
+                if (matchedParameterRoute.HasValue)
+                {
+                    var (handler, authorizeAttr, ipRangeAttr, pattern, parameters) = matchedParameterRoute.Value;
+                    
+                    // Establecer parámetros en el contexto para que el handler pueda accederlos
+                    foreach (var param in parameters)
                     {
-                        context.SetFeature(routeInfo.IpRangeAttr);
+                        context.SetRouteParameter(param.Key, param.Value);
                     }
-
-                    // Verificar autorización si es necesario
-                    if (routeInfo.AuthorizeAttr != null)
-                    {
-                        var isAuthorized = await ValidateAuthorization(context, routeInfo.AuthorizeAttr, routeInfo.IpRangeAttr);
-                        if (!isAuthorized)
-                        {
-                            return true; // Error response already sent
-                        }
-                    }
-
-                    await routeInfo.Handler(context);
+                    
+                    await ExecuteRoute(context, handler, authorizeAttr, ipRangeAttr, parameters);
                     return true;
                 }
 
@@ -142,6 +156,90 @@ namespace FastApi_NetCore.Features.Routing
                 return false;
             }
         }
+        private async Task ExecuteRoute(HttpListenerContext context, Func<HttpListenerContext, Task> handler, 
+            AuthorizeAttribute authorizeAttr, IpRangeAttribute ipRangeAttr, Dictionary<string, string> parameters)
+        {
+            // Establecer los atributos en el contexto
+            if (authorizeAttr != null)
+            {
+                context.SetFeature(authorizeAttr);
+            }
+
+            if (ipRangeAttr != null)
+            {
+                context.SetFeature(ipRangeAttr);
+            }
+
+            // Verificar autorización si es necesario
+            if (authorizeAttr != null)
+            {
+                var isAuthorized = await ValidateAuthorization(context, authorizeAttr, ipRangeAttr);
+                if (!isAuthorized)
+                {
+                    return; // Error response already sent
+                }
+            }
+
+            await handler(context);
+        }
+
+        private (Func<HttpListenerContext, Task> Handler, AuthorizeAttribute AuthorizeAttr, IpRangeAttribute IpRangeAttr, string Pattern, Dictionary<string, string> Parameters)? 
+            FindParameterizedRoute(HttpMethodType method, string requestPath)
+        {
+            foreach (var kvp in _parameterRoutes)
+            {
+                var (routeMethod, _) = kvp.Key;
+                var (handler, authorizeAttr, ipRangeAttr, pattern) = kvp.Value;
+                
+                if (routeMethod != method) continue;
+                
+                var parameters = MatchRoutePattern(pattern, requestPath);
+                if (parameters != null)
+                {
+                    _logger.LogDebug($"[ROUTER] Matched parameterized route: {pattern} -> {requestPath}");
+                    return (handler, authorizeAttr, ipRangeAttr, pattern, parameters);
+                }
+            }
+            
+            return null;
+        }
+
+        private Dictionary<string, string>? MatchRoutePattern(string pattern, string requestPath)
+        {
+            // Normalizar ambas rutas
+            pattern = Normalize(pattern);
+            requestPath = Normalize(requestPath);
+            
+            var patternSegments = pattern.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            var requestSegments = requestPath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            
+            // Verificar que tengan el mismo número de segmentos
+            if (patternSegments.Length != requestSegments.Length)
+                return null;
+            
+            var parameters = new Dictionary<string, string>();
+            
+            for (int i = 0; i < patternSegments.Length; i++)
+            {
+                var patternSegment = patternSegments[i];
+                var requestSegment = requestSegments[i];
+                
+                if (patternSegment.StartsWith('{') && patternSegment.EndsWith('}'))
+                {
+                    // Es un parámetro
+                    var paramName = patternSegment.Substring(1, patternSegment.Length - 2);
+                    parameters[paramName] = requestSegment;
+                }
+                else if (patternSegment != requestSegment)
+                {
+                    // Segmento estático no coincide
+                    return null;
+                }
+            }
+            
+            return parameters;
+        }
+
         private static void SafeCloseResponse(HttpListenerResponse response)
         {
             try

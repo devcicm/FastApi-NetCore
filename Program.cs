@@ -93,18 +93,56 @@ public class Program
                 services.AddSingleton<StringBuilderPool>();
                 services.AddSingleton<MemoryStreamPool>();
 
+                // Configurar las nuevas configuraciones avanzadas
+                services.Configure<PartitioningConfig>(ctx.Configuration.GetSection("PartitioningConfig"));
+                services.Configure<LoadBalancingConfig>(ctx.Configuration.GetSection("LoadBalancingConfig"));
+                services.Configure<ChannelsConfig>(ctx.Configuration.GetSection("ChannelsConfig"));
+                services.Configure<PerformanceProfiles>(ctx.Configuration.GetSection("PerformanceProfiles"));
+
                 // Configurar el procesador de requests con balanceo de carga (versión mejorada)
                 services.AddSingleton(provider =>
                 {
                     var logger = provider.GetRequiredService<ILoggerService>();
+                    var partitioningConfig = ctx.Configuration.GetSection("PartitioningConfig").Get<PartitioningConfig>() ?? new PartitioningConfig();
+                    var loadBalancingConfig = ctx.Configuration.GetSection("LoadBalancingConfig").Get<LoadBalancingConfig>() ?? new LoadBalancingConfig();
+                    var channelsConfig = ctx.Configuration.GetSection("ChannelsConfig").Get<ChannelsConfig>() ?? new ChannelsConfig();
+
+                    // Obtener el perfil de rendimiento activo
+                    var activeProfileName = ctx.Configuration["ActivePerformanceProfile"] ?? "Development";
+                    var performanceProfiles = ctx.Configuration.GetSection("PerformanceProfiles").Get<PerformanceProfiles>() ?? new PerformanceProfiles();
+
+                    PerformanceProfile? activeProfile = activeProfileName switch
+                    {
+                        "Development" => performanceProfiles.Development,
+                        "Testing" => performanceProfiles.Testing,
+                        "Production" => performanceProfiles.Production,
+                        "HighLoad" => performanceProfiles.HighLoad,
+                        _ => null
+                    };
+
+                    // Aplicar configuración efectiva con perfil de rendimiento
+                    var effectivePartitioningConfig = partitioningConfig.GetEffectivePartitioningConfig(activeProfile);
+                    var effectiveLoadBalancingConfig = loadBalancingConfig.GetEffectiveLoadBalancingConfig(activeProfile);
+                    var effectiveChannelsConfig = channelsConfig.GetEffectiveChannelsConfig(activeProfile);
+
+                    // Convertir a RequestProcessorConfiguration (manteniendo compatibilidad)
                     var config = new RequestProcessorConfiguration
                     {
-                        BasePartitions = 4, // 4 partitions base por prioridad
-                        MaxQueueDepthPerPartition = 1000,
-                        EnableProcessingLogs = !serverConfig.IsProduction, // Solo en desarrollo
-                        EnableDetailedMetrics = true,
-                        RequestTimeout = TimeSpan.FromSeconds(30)
+                        BasePartitions = effectivePartitioningConfig.BasePartitions == 0
+                            ? Math.Max(Environment.ProcessorCount, effectivePartitioningConfig.MinPartitions)
+                            : effectivePartitioningConfig.BasePartitions,
+                        MaxQueueDepthPerPartition = effectivePartitioningConfig.MaxQueueDepthPerPartition,
+                        EnableProcessingLogs = effectivePartitioningConfig.EnableProcessingLogs,
+                        EnableDetailedMetrics = effectivePartitioningConfig.EnableDetailedMetrics,
+                        RequestTimeout = TimeSpan.FromSeconds(effectivePartitioningConfig.RequestTimeoutSeconds)
                     };
+
+                    logger.LogInformation($"[CONFIG] Active Performance Profile: {activeProfileName}");
+                    logger.LogInformation($"[CONFIG] Effective BasePartitions: {config.BasePartitions}");
+                    logger.LogInformation($"[CONFIG] Effective MaxQueueDepthPerPartition: {config.MaxQueueDepthPerPartition}");
+                    logger.LogInformation($"[CONFIG] Effective RequestTimeout: {config.RequestTimeout.TotalSeconds}s");
+                    logger.LogInformation($"[CONFIG] Circuit Breaker Error Threshold: {effectiveLoadBalancingConfig.CircuitBreaker.ErrorThresholdPercentage}%");
+
                     return new LoadBalancedPartitionedRequestProcessor(logger, config);
                 });
 

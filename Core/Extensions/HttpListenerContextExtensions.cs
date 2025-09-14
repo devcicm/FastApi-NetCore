@@ -154,6 +154,37 @@ namespace FastApi_NetCore.Core.Extensions
         }
 
         /// <summary>
+        /// Establece un parámetro de ruta en el contexto
+        /// </summary>
+        public static void SetRouteParameter(this HttpListenerContext context, string key, string value)
+        {
+            if (!context.HasFeature<Dictionary<string, string>>())
+            {
+                context.SetFeature(new Dictionary<string, string>());
+            }
+            
+            var parameters = context.GetFeature<Dictionary<string, string>>();
+            parameters![key] = value;
+        }
+
+        /// <summary>
+        /// Obtiene un parámetro de ruta del contexto
+        /// </summary>
+        public static string? GetRouteParameter(this HttpListenerContext context, string key)
+        {
+            var parameters = context.GetFeature<Dictionary<string, string>>();
+            return parameters?.TryGetValue(key, out var value) == true ? value : null;
+        }
+
+        /// <summary>
+        /// Obtiene todos los parámetros de ruta del contexto
+        /// </summary>
+        public static Dictionary<string, string> GetRouteParameters(this HttpListenerContext context)
+        {
+            return context.GetFeature<Dictionary<string, string>>() ?? new Dictionary<string, string>();
+        }
+
+        /// <summary>
         /// Deserializa el cuerpo de la request a un objeto del tipo especificado
         /// </summary>
         public static async Task<T?> GetModelAsync<T>(this HttpListenerContext context) where T : class, new()

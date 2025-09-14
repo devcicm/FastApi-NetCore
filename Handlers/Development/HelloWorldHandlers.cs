@@ -1,5 +1,8 @@
 using FastApi_NetCore.Core.Attributes;
 using FastApi_NetCore.Core.Extensions;
+using FastApi_NetCore.Core.Handlers;
+using FastApi_NetCore.Core.Helpers;
+using FastApi_NetCore.Core.Services;
 using System;
 using System.IO;
 using System.Net;
@@ -15,6 +18,7 @@ namespace FastApi_NetCore.Handlers.Development
     [RateLimit(100, 60)] // GLOBAL: 100 requests per minute for demo endpoints
     internal class HelloWorldHandlers
     {
+
         /// <summary>
         /// Simple Hello World endpoint - GET
         /// Returns a basic greeting message
@@ -22,30 +26,18 @@ namespace FastApi_NetCore.Handlers.Development
         [RouteConfiguration("/hello", HttpMethodType.GET)]
         internal async Task HelloWorld(HttpListenerContext context)
         {
-            var response = new
+            await BaseApiHandler.ExecuteWithErrorHandling(context, async () =>
             {
-                Message = "¡Hola Mundo!",
-                Description = "Simple Hello World demonstration endpoint",
-                Greeting = "Hello World from FastApi NetCore!",
-                ServerTime = DateTime.UtcNow,
-                Language = "Spanish",
-                RequestInfo = new
+                BaseApiHandler.LogHandlerExecution("HelloWorld", context);
+                
+                var data = new
                 {
-                    Method = context.Request.HttpMethod,
-                    Path = context.Request.Url?.AbsolutePath,
-                    ClientIP = context.Request.RemoteEndPoint?.Address?.ToString(),
-                    UserAgent = context.Request.UserAgent
-                },
-                Security = new
-                {
-                    AuthRequired = false,
-                    RateLimit = "100 requests per minute",
-                    PolicyApplied = "Public endpoint - no authentication required"
-                }
-            };
-
-            var responseHandler = context.GetService<IHttpResponseHandler>();
-            await responseHandler.SendAsync(context, response, true);
+                    Greeting = "Hello World from FastApi NetCore!",
+                    Language = "Spanish"
+                };
+                
+                await BaseApiHandler.SendResponseAsync(context, data, "¡Hola Mundo!", "Simple Hello World demonstration endpoint");
+            }, "HelloWorld");
         }
 
         /// <summary>
@@ -56,35 +48,35 @@ namespace FastApi_NetCore.Handlers.Development
         [RouteConfiguration("/hello/personal", HttpMethodType.GET)]
         internal async Task PersonalizedHello(HttpListenerContext context)
         {
-            // Extract name from query parameters
-            var queryParams = context.Request.QueryString;
-            var name = queryParams["name"] ?? "Amigo";
-            
-            var response = new
+            await BaseApiHandler.ExecuteWithErrorHandling(context, async () =>
             {
-                Message = $"¡Hola {name}!",
-                Description = "Personalized Hello World endpoint with query parameter support",
-                Greeting = $"Hello {name}, welcome to FastApi NetCore!",
-                ServerTime = DateTime.UtcNow,
-                PersonalizedFor = name,
-                Usage = new
+                BaseApiHandler.LogHandlerExecution("PersonalizedHello", context);
+                
+                // Use centralized parameter validation for query parameter
+                var queryParams = context.Request.QueryString;
+                var nameValidation = ParameterValidationService.ValidateString(queryParams["name"], 1, 50, true, "name");
+                var name = nameValidation.IsValid ? nameValidation.Value : "Amigo";
+                
+                var data = new
                 {
-                    Endpoint = "/hello/personal",
-                    Parameter = "name (query parameter)",
-                    Example = "/hello/personal?name=Carlos",
-                    DefaultName = "Amigo"
-                },
-                RequestInfo = new
-                {
-                    Method = context.Request.HttpMethod,
-                    Path = context.Request.Url?.AbsolutePath,
-                    Query = context.Request.Url?.Query,
-                    ClientIP = context.Request.RemoteEndPoint?.Address?.ToString()
-                }
-            };
-
-            var responseHandler = context.GetService<IHttpResponseHandler>();
-            await responseHandler.SendAsync(context, response, true);
+                    Greeting = $"Hello {name}, welcome to FastApi NetCore!",
+                    PersonalizedFor = name,
+                    Usage = new
+                    {
+                        Endpoint = "/hello/personal",
+                        Parameter = "name (query parameter)",
+                        Example = "/hello/personal?name=Carlos",
+                        DefaultName = "Amigo"
+                    },
+                    ValidationInfo = new
+                    {
+                        NameValidation = nameValidation.Message,
+                        Query = context.Request.Url?.Query
+                    }
+                };
+                
+                await BaseApiHandler.SendResponseAsync(context, data, $"¡Hola {name}!", "Personalized Hello World endpoint with query parameter support");
+            }, "PersonalizedHello");
         }
 
         /// <summary>
@@ -94,71 +86,75 @@ namespace FastApi_NetCore.Handlers.Development
         [RouteConfiguration("/hello/post", HttpMethodType.POST)]
         internal async Task HelloWorldPost(HttpListenerContext context)
         {
-            string name = "Amigo";
-            string message = "";
-            
-            // Read request body if present
-            if (context.Request.HasEntityBody)
+            await BaseApiHandler.ExecuteWithErrorHandling(context, async () =>
             {
-                try
+                BaseApiHandler.LogHandlerExecution("HelloWorldPost", context);
+                
+                string name = "Amigo";
+                string message = "";
+                string parseStatus = "No body provided";
+                
+                // Read request body if present
+                if (context.Request.HasEntityBody)
                 {
-                    using var reader = new StreamReader(context.Request.InputStream, context.Request.ContentEncoding);
-                    var requestBody = await reader.ReadToEndAsync();
-                    
-                    if (!string.IsNullOrWhiteSpace(requestBody))
+                    try
                     {
-                        // Try to parse JSON
-                        var jsonDoc = JsonDocument.Parse(requestBody);
-                        if (jsonDoc.RootElement.TryGetProperty("name", out var nameElement))
+                        using var reader = new StreamReader(context.Request.InputStream, context.Request.ContentEncoding);
+                        var requestBody = await reader.ReadToEndAsync();
+                        
+                        if (!string.IsNullOrWhiteSpace(requestBody))
                         {
-                            name = nameElement.GetString() ?? "Amigo";
+                            // Try to parse JSON
+                            var jsonDoc = JsonDocument.Parse(requestBody);
+                            if (jsonDoc.RootElement.TryGetProperty("name", out var nameElement))
+                            {
+                                // Use centralized validation for the name
+                                var nameValidation = ParameterValidationService.ValidateString(nameElement.GetString(), 1, 50, false, "name");
+                                name = nameValidation.IsValid ? nameValidation.Value : "Amigo";
+                            }
+                            if (jsonDoc.RootElement.TryGetProperty("message", out var messageElement))
+                            {
+                                // Use centralized validation for the message
+                                var messageValidation = ParameterValidationService.ValidateString(messageElement.GetString(), 0, 200, true, "message");
+                                message = messageValidation.IsValid ? messageValidation.Value : "";
+                            }
+                            parseStatus = "JSON parsed successfully";
                         }
-                        if (jsonDoc.RootElement.TryGetProperty("message", out var messageElement))
+                        else
                         {
-                            message = messageElement.GetString() ?? "";
+                            parseStatus = "Empty request body";
                         }
                     }
-                }
-                catch (Exception ex)
-                {
-                    // If JSON parsing fails, use default values
-                    message = $"Error parsing JSON: {ex.Message}";
-                }
-            }
-
-            var response = new
-            {
-                Message = $"¡Hola {name}!",
-                Description = "Hello World endpoint that accepts POST data",
-                Greeting = $"Hello {name}, thanks for posting to FastApi NetCore!",
-                ServerTime = DateTime.UtcNow,
-                ReceivedData = new
-                {
-                    Name = name,
-                    CustomMessage = string.IsNullOrEmpty(message) ? "No custom message provided" : message
-                },
-                Usage = new
-                {
-                    Method = "POST",
-                    ContentType = "application/json",
-                    Example = new
+                    catch (Exception ex)
                     {
-                        name = "Carlos",
-                        message = "Hello from the client!"
+                        // If JSON parsing fails, use default values
+                        parseStatus = $"Error parsing JSON: {ex.Message}";
                     }
-                },
-                RequestInfo = new
-                {
-                    Method = context.Request.HttpMethod,
-                    Path = context.Request.Url?.AbsolutePath,
-                    ContentLength = context.Request.ContentLength64,
-                    ContentType = context.Request.ContentType,
-                    ClientIP = context.Request.RemoteEndPoint?.Address?.ToString()
                 }
-            };
 
-            var responseHandler = context.GetService<IHttpResponseHandler>();
-            await responseHandler.SendAsync(context, response, true);
+                var data = new
+                {
+                    Greeting = $"Hello {name}, thanks for posting to FastApi NetCore!",
+                    ReceivedData = new
+                    {
+                        Name = name,
+                        CustomMessage = string.IsNullOrEmpty(message) ? "No custom message provided" : message,
+                        ParseStatus = parseStatus
+                    },
+                    Usage = new
+                    {
+                        Method = "POST",
+                        ContentType = "application/json",
+                        Example = new
+                        {
+                            name = "Carlos",
+                            message = "Hello from the client!"
+                        }
+                    }
+                };
+                
+                await BaseApiHandler.SendResponseAsync(context, data, $"¡Hola {name}!", "Hello World endpoint that accepts POST data");
+            }, "HelloWorldPost");
         }
     }
 }

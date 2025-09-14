@@ -154,43 +154,77 @@ namespace FastApi_NetCore.Features.RequestProcessing
 
         public int SelectOptimalPartition(HttpListenerContext context, PartitionWorker[] workers)
         {
-            // Estrategia 1: Encontrar worker menos ocupado
+            // Estrategia 1: Encontrar worker menos ocupado entre los saludables
             int leastBusyIndex = -1;
             int leastQueueDepth = int.MaxValue;
+            double bestErrorRate = double.MaxValue;
 
             for (int i = 0; i < workers.Length; i++)
             {
                 if (workers[i].IsHealthy)
                 {
                     var queueDepth = workers[i].QueueDepth;
-                    if (queueDepth < leastQueueDepth)
+                    var errorRate = workers[i].ProcessedCount > 0 ?
+                        (workers[i].ErrorCount * 100.0 / workers[i].ProcessedCount) : 0;
+
+                    // Prioritize workers with low queue depth AND low error rate
+                    if (queueDepth < leastQueueDepth ||
+                        (queueDepth == leastQueueDepth && errorRate < bestErrorRate))
                     {
                         leastQueueDepth = queueDepth;
+                        bestErrorRate = errorRate;
                         leastBusyIndex = i;
                     }
                 }
             }
 
             // Si encontramos un worker saludable con capacidad disponible
-            if (leastBusyIndex != -1 && leastQueueDepth < _config.MaxQueueDepthPerPartition)
+            if (leastBusyIndex != -1 && leastQueueDepth < _config.MaxQueueDepthPerPartition * 0.8) // 80% threshold
             {
                 return leastBusyIndex;
             }
 
-            // Estrategia 2: Round robin entre workers saludables
+            // Estrategia 2: Round robin entre workers saludables con capacidad
             int attempts = 0;
             while (attempts < workers.Length)
             {
                 var index = Interlocked.Increment(ref _roundRobinCounter) % workers.Length;
                 if (workers[index].IsHealthy && workers[index].HasCapacity)
                 {
-                    return index;
+                    // Additional check for error rate
+                    var errorRate = workers[index].ProcessedCount > 0 ?
+                        (workers[index].ErrorCount * 100.0 / workers[index].ProcessedCount) : 0;
+
+                    if (errorRate < 15) // Only use workers with <15% error rate
+                    {
+                        return index;
+                    }
                 }
                 attempts++;
             }
 
+            // Estrategia 3: Emergency fallback - any healthy worker
+            for (int i = 0; i < workers.Length; i++)
+            {
+                if (workers[i].IsHealthy)
+                {
+                    _logger.LogWarning($"[LOAD-BALANCER] Emergency fallback to worker {i} (capacity: {workers[i].QueueDepth}/{_config.MaxQueueDepthPerPartition})");
+                    return i;
+                }
+            }
+
             // No hay workers disponibles
-            _logger.LogWarning($"[LOAD-BALANCER] No healthy workers available. Healthy: {CountHealthyWorkers(workers)}/{workers.Length}");
+            var healthyCount = CountHealthyWorkers(workers);
+            _logger.LogError($"[LOAD-BALANCER] CRITICAL: No healthy workers available! Healthy: {healthyCount}/{workers.Length}");
+
+            // Log worker states for debugging
+            for (int i = 0; i < workers.Length; i++)
+            {
+                var errorRate = workers[i].ProcessedCount > 0 ?
+                    (workers[i].ErrorCount * 100.0 / workers[i].ProcessedCount) : 0;
+                _logger.LogError($"[LOAD-BALANCER] Worker {i}: Health={workers[i].IsHealthy}, Queue={workers[i].QueueDepth}, ErrorRate={errorRate:F1}%");
+            }
+
             return -1;
         }
 
@@ -306,11 +340,27 @@ namespace FastApi_NetCore.Features.RequestProcessing
                         
                         _logger.LogError($"[PARTITION-WORKER-{_partitionId}] Error processing request {requestTask.RequestId}: {ex}");
                         
-                        // Determinar si este worker debe marcarse como no saludable
-                        if (ErrorCount > 10 && (ErrorCount * 100 / ProcessedCount) > 50)
+                        // Circuit breaker: Determinar si este worker debe marcarse como no saludable
+                        var errorRate = ProcessedCount > 0 ? (ErrorCount * 100.0 / ProcessedCount) : 0;
+                        if (ErrorCount > 10 && errorRate > 25) // 25% error threshold
                         {
                             _isHealthy = false;
-                            _logger.LogWarning($"[PARTITION-WORKER-{_partitionId}] Marked as unhealthy due to high error rate");
+                            _logger.LogWarning($"[PARTITION-WORKER-{_partitionId}] Circuit breaker OPEN - marked as unhealthy (Error rate: {errorRate:F1}%, Errors: {ErrorCount}/{ProcessedCount})");
+
+                            // Schedule recovery attempt after cooldown period
+                            _ = Task.Delay(TimeSpan.FromSeconds(30)).ContinueWith(_ =>
+                            {
+                                if (ErrorCount > ProcessedCount / 2) return; // Still too many errors
+
+                                _isHealthy = true;
+                                _logger.LogInformation($"[PARTITION-WORKER-{_partitionId}] Circuit breaker HALF-OPEN - attempting recovery");
+                            });
+                        }
+                        // Auto-recovery for workers with improving error rates
+                        else if (!_isHealthy && ErrorCount < 5 && errorRate < 10)
+                        {
+                            _isHealthy = true;
+                            _logger.LogInformation($"[PARTITION-WORKER-{_partitionId}] Circuit breaker CLOSED - worker recovered (Error rate: {errorRate:F1}%)");
                         }
                     }
                 }

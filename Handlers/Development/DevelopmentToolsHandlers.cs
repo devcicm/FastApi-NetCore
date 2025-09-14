@@ -1,5 +1,8 @@
 using FastApi_NetCore.Core.Attributes;
 using FastApi_NetCore.Core.Extensions;
+using FastApi_NetCore.Core.Handlers;
+using FastApi_NetCore.Core.Helpers;
+using FastApi_NetCore.Core.Services;
 using System;
 using System.Net;
 using System.Text;
@@ -14,172 +17,177 @@ namespace FastApi_NetCore.Handlers.Development
     [RateLimit(1000, 60)] // GLOBAL: High throughput for development tools
     internal class DevelopmentToolsHandlers
     {
+
         [RouteConfiguration("/dev/ping", HttpMethodType.GET)]
         internal async Task Ping(HttpListenerContext context)
         {
-            var response = new
+            await BaseApiHandler.ExecuteWithErrorHandling(context, async () =>
             {
-                Message = "🏓 Ping Response",
-                Description = "Simple ping endpoint for connectivity testing",
-                Response = "pong",
-                ServerTime = DateTime.UtcNow,
-                ServerInfo = new
+                BaseApiHandler.LogHandlerExecution("Ping", context);
+                
+                var data = new
                 {
-                    Environment = "Development",
-                    Version = "1.0.0",
-                    Status = "Operational"
-                },
-                RequestInfo = new
-                {
-                    Method = context.Request.HttpMethod,
-                    Url = context.Request.Url?.ToString(),
-                    UserAgent = context.Request.UserAgent,
-                    ClientIP = context.Request.RemoteEndPoint?.Address?.ToString()
-                }
-            };
-
-            var responseHandler = context.GetService<IHttpResponseHandler>();
-            await responseHandler.SendAsync(context, response, true);
+                    Response = "pong",
+                    ServerInfo = new
+                    {
+                        Environment = "Development",
+                        Version = "1.0.0",
+                        Status = "Operational"
+                    }
+                };
+                
+                await BaseApiHandler.SendResponseAsync(context, data, "🏓 Ping Response", "Simple ping endpoint for connectivity testing");
+            }, "Ping");
         }
 
         [RouteConfiguration("/dev/echo", HttpMethodType.POST)]
         internal async Task Echo(HttpListenerContext context)
         {
-            string requestBody = "";
-            if (context.Request.HasEntityBody)
+            await BaseApiHandler.ExecuteWithErrorHandling(context, async () =>
             {
-                using var reader = new StreamReader(context.Request.InputStream, context.Request.ContentEncoding);
-                requestBody = await reader.ReadToEndAsync();
-            }
-
-            var response = new
-            {
-                Message = "🔊 Echo Response",
-                Description = "Echo back the request data for testing",
-                Echo = new
+                BaseApiHandler.LogHandlerExecution("Echo", context);
+                
+                string requestBody = "";
+                if (context.Request.HasEntityBody)
                 {
-                    Body = requestBody,
-                    ContentType = context.Request.ContentType,
-                    ContentLength = context.Request.ContentLength64,
-                    Method = context.Request.HttpMethod,
-                    Headers = context.Request.Headers.AllKeys.ToDictionary(
-                        key => key, 
-                        key => context.Request.Headers[key]
-                    )
-                },
-                ResponseInfo = new
-                {
-                    ProcessedAt = DateTime.UtcNow,
-                    BodyLength = requestBody.Length,
-                    HeaderCount = context.Request.Headers.Count
+                    using var reader = new StreamReader(context.Request.InputStream, context.Request.ContentEncoding);
+                    requestBody = await reader.ReadToEndAsync();
                 }
-            };
 
-            var responseHandler = context.GetService<IHttpResponseHandler>();
-            await responseHandler.SendAsync(context, response, true);
+                var data = new
+                {
+                    Echo = new
+                    {
+                        Body = requestBody,
+                        ContentType = context.Request.ContentType,
+                        ContentLength = context.Request.ContentLength64,
+                        Method = context.Request.HttpMethod,
+                        Headers = context.Request.Headers.AllKeys.ToDictionary(
+                            key => key, 
+                            key => context.Request.Headers[key]
+                        )
+                    },
+                    ResponseInfo = new
+                    {
+                        ProcessedAt = DateTime.UtcNow,
+                        BodyLength = requestBody.Length,
+                        HeaderCount = context.Request.Headers.Count
+                    }
+                };
+                
+                await BaseApiHandler.SendResponseAsync(context, data, "🔊 Echo Response", "Echo back the request data for testing");
+            }, "Echo");
         }
 
         [RouteConfiguration("/dev/headers", HttpMethodType.GET)]
         internal async Task ShowHeaders(HttpListenerContext context)
         {
-            var headers = new Dictionary<string, string>();
-            foreach (string key in context.Request.Headers.AllKeys)
+            await BaseApiHandler.ExecuteWithErrorHandling(context, async () =>
             {
-                if (key != null)
+                BaseApiHandler.LogHandlerExecution("ShowHeaders", context);
+                
+                var headers = new Dictionary<string, string>();
+                foreach (string key in context.Request.Headers.AllKeys)
                 {
-                    headers[key] = context.Request.Headers[key] ?? "";
+                    if (key != null)
+                    {
+                        headers[key] = context.Request.Headers[key] ?? "";
+                    }
                 }
-            }
 
-            var response = new
-            {
-                Message = "📋 Request Headers Analysis",
-                Description = "Display all HTTP headers received with the request",
-                Headers = headers,
-                Analysis = new
+                var data = new
                 {
-                    TotalHeaders = headers.Count,
-                    HasUserAgent = headers.ContainsKey("User-Agent"),
-                    HasAuthorization = headers.ContainsKey("Authorization"),
-                    HasContentType = headers.ContainsKey("Content-Type"),
-                    HasApiKey = headers.Any(h => h.Key.ToLower().Contains("key")),
-                    CommonHeaders = headers.Keys.Where(k => new[] { "User-Agent", "Accept", "Host", "Connection" }.Contains(k)).ToArray()
-                },
-                Timestamp = DateTime.UtcNow
-            };
-
-            var responseHandler = context.GetService<IHttpResponseHandler>();
-            await responseHandler.SendAsync(context, response, true);
+                    Headers = headers,
+                    Analysis = new
+                    {
+                        TotalHeaders = headers.Count,
+                        HasUserAgent = headers.ContainsKey("User-Agent"),
+                        HasAuthorization = headers.ContainsKey("Authorization"),
+                        HasContentType = headers.ContainsKey("Content-Type"),
+                        HasApiKey = headers.Any(h => h.Key.ToLower().Contains("key")),
+                        CommonHeaders = headers.Keys.Where(k => new[] { "User-Agent", "Accept", "Host", "Connection" }.Contains(k)).ToArray()
+                    }
+                };
+                
+                await BaseApiHandler.SendResponseAsync(context, data, "📋 Request Headers Analysis", "Display all HTTP headers received with the request");
+            }, "ShowHeaders");
         }
 
         [RouteConfiguration("/dev/delay/{seconds}", HttpMethodType.GET)]
         internal async Task DelayedResponse(HttpListenerContext context)
         {
-            // In a real implementation, you'd parse the seconds from the URL path
-            int delaySeconds = 2; // Demo: 2 second delay
-            
-            var startTime = DateTime.UtcNow;
-            await Task.Delay(TimeSpan.FromSeconds(delaySeconds));
-            var endTime = DateTime.UtcNow;
-
-            var response = new
+            await BaseApiHandler.ExecuteWithErrorHandling(context, async () =>
             {
-                Message = "⏱️ Delayed Response",
-                Description = $"Response delayed by {delaySeconds} seconds for testing",
-                Timing = new
-                {
-                    RequestedDelaySeconds = delaySeconds,
-                    ActualDelayMs = (endTime - startTime).TotalMilliseconds,
-                    StartTime = startTime,
-                    EndTime = endTime
-                },
-                Usage = new
-                {
-                    Purpose = "Testing timeouts, async behavior, and loading states",
-                    Example = "GET /dev/delay/5 - delays response by 5 seconds",
-                    Note = "Useful for frontend development and testing"
-                }
-            };
+                BaseApiHandler.LogHandlerExecution("DelayedResponse", context);
+                
+                // Use centralized parameter validation
+                var validation = ParameterValidationService.ValidateDelaySeconds(context.GetRouteParameter("seconds"));
+                int delaySeconds = validation.IsValid ? validation.Value : 2;
+                
+                var startTime = DateTime.UtcNow;
+                await Task.Delay(TimeSpan.FromSeconds(delaySeconds));
+                var endTime = DateTime.UtcNow;
 
-            var responseHandler = context.GetService<IHttpResponseHandler>();
-            await responseHandler.SendAsync(context, response, true);
+                var data = new
+                {
+                    Timing = new
+                    {
+                        RequestedDelaySeconds = delaySeconds,
+                        ActualDelayMs = (endTime - startTime).TotalMilliseconds,
+                        StartTime = startTime,
+                        EndTime = endTime,
+                        ValidationMessage = validation.Message
+                    },
+                    Usage = new
+                    {
+                        Purpose = "Testing timeouts, async behavior, and loading states",
+                        Example = "GET /dev/delay/5 - delays response by 5 seconds",
+                        Note = "Useful for frontend development and testing"
+                    }
+                };
+                
+                await BaseApiHandler.SendResponseAsync(context, data, "⏱️ Delayed Response", $"Response delayed by {delaySeconds} seconds for testing");
+            }, "DelayedResponse");
         }
 
         [RouteConfiguration("/dev/status/{code}", HttpMethodType.GET)]
         internal async Task CustomStatusCode(HttpListenerContext context)
         {
-            // In a real implementation, you'd parse the status code from URL
-            int statusCode = 418; // Demo: I'm a teapot
-            
-            context.Response.StatusCode = statusCode;
-            
-            var response = new
+            await BaseApiHandler.ExecuteWithErrorHandling(context, async () =>
             {
-                Message = $"📟 Custom Status Code: {statusCode}",
-                Description = "Return custom HTTP status codes for testing",
-                StatusInfo = new
+                BaseApiHandler.LogHandlerExecution("CustomStatusCode", context);
+                
+                // Use centralized parameter validation
+                var validation = ParameterValidationService.ValidateStatusCode(context.GetRouteParameter("code"));
+                int statusCode = validation.IsValid ? validation.Value : 418;
+                
+                context.Response.StatusCode = statusCode;
+                
+                var data = new
                 {
-                    Code = statusCode,
-                    StandardMeaning = GetStatusCodeMeaning(statusCode),
-                    IsSuccessCode = statusCode >= 200 && statusCode < 300,
-                    IsClientError = statusCode >= 400 && statusCode < 500,
-                    IsServerError = statusCode >= 500
-                },
-                Usage = new
-                {
-                    Purpose = "Testing error handling, status code processing",
-                    Examples = new[]
+                    StatusInfo = new
                     {
-                        "GET /dev/status/200 - OK",
-                        "GET /dev/status/404 - Not Found", 
-                        "GET /dev/status/500 - Internal Server Error"
+                        Code = statusCode,
+                        StandardMeaning = GetStatusCodeMeaning(statusCode),
+                        IsSuccessCode = statusCode >= 200 && statusCode < 300,
+                        IsClientError = statusCode >= 400 && statusCode < 500,
+                        IsServerError = statusCode >= 500,
+                        ValidationMessage = validation.Message
+                    },
+                    Usage = new
+                    {
+                        Purpose = "Testing error handling, status code processing",
+                        Examples = new[]
+                        {
+                            "GET /dev/status/200 - OK",
+                            "GET /dev/status/404 - Not Found", 
+                            "GET /dev/status/500 - Internal Server Error"
+                        }
                     }
-                },
-                Timestamp = DateTime.UtcNow
-            };
-
-            var responseHandler = context.GetService<IHttpResponseHandler>();
-            await responseHandler.SendAsync(context, response, true);
+                };
+                
+                await BaseApiHandler.SendResponseAsync(context, data, $"📟 Custom Status Code: {statusCode}", "Return custom HTTP status codes for testing");
+            }, "CustomStatusCode");
         }
 
         private static string GetStatusCodeMeaning(int code)

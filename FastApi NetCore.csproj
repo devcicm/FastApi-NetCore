@@ -43,15 +43,20 @@
     <Message Text="🔍 Running Advanced Global Policy Validation..." Importance="high" />
     <Exec Command="powershell.exe -ExecutionPolicy Bypass -File &quot;RoslynAnalyzers\Scripts\Advanced-ValidateGlobalPolicies.ps1&quot; -ProjectPath &quot;.&quot;" ContinueOnError="false" CustomErrorRegularExpression="^(FAPI\d{3}): (.*)$" CustomWarningRegularExpression="^WARNING: (.*)$" />
   </Target>
+  <ItemGroup>
+    <None Remove="NUL" />
+  </ItemGroup>
 
   <!-- Include GlobalSuppressions from RoslynAnalyzers -->
   <ItemGroup>
     <Compile Include="RoslynAnalyzers\Suppressions\GlobalSuppressions.cs" Link="GlobalSuppressions.cs" />
   </ItemGroup>
 
-  <!-- Asegurar que el appsettings.json se trate como el archivo maestro en bin -->
-  <Target Name="EnsureMasterConfig" BeforeTargets="Build">
-    <Message Text="Ensuring master configuration is set up in output directory" Importance="high" />
-  </Target>
+  <!-- Configuración automática de appsettings.json como archivo maestro único -->
+	<Target Name="EnsureMasterConfig" BeforeTargets="Build">
+		<Message Text="Ensuring master configuration is set up in output directory" Importance="high" />
+	</Target>
+
+  <!-- Incluir el archivo de configuración maestro único -->
 
 </Project>
